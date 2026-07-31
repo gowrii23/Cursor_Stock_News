@@ -32,7 +32,7 @@ class DailyScreenWorker(
             PythonBridge.init(applicationContext)
             val result = PythonBridge.runDailyScreen(useLive = true, forceDemo = false)
             val status = result.get("status")?.asString ?: "error"
-            if (status != "ok") {
+            if (status != "ok" && status != "partial") {
                 return Result.retry()
             }
             val flagged = result.get("flagged_count")?.asInt ?: 0

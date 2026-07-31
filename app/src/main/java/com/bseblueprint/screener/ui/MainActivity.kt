@@ -204,22 +204,30 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
         val actionable = items.count { it.severity_tag == "CANDIDATE" }
         val date = items.firstOrNull()?.date ?: "—"
         val finished = formatIstTime(run?.get("finished_at")?.asString)
-        val modeLabel = if (mode == "live") {
-            getString(R.string.subtitle_live_news)
-        } else {
-            getString(R.string.subtitle_demo_news)
+        val modeLabel = when (mode) {
+            "live" -> getString(R.string.subtitle_live_news)
+            "cached" -> "Cached run · showing last good screen"
+            else -> getString(R.string.subtitle_demo_news)
         }
-        val yahoo = healthLabel(health?.get("yahoo")?.asString)
+        val bhavcopy = healthLabel(health?.get("bhavcopy")?.asString)
         val pulse = healthLabel(health?.get("pulse")?.asString)
         val nse = healthLabel(health?.get("nse")?.asString)
+        val gnews = healthLabel(health?.get("gnews")?.asString)
         subtitle.text = "$modeLabel · $finished · $actionable actionable · $date · " +
-            "${getString(R.string.health_yahoo)} $yahoo · " +
+            "${getString(R.string.health_bhavcopy)} $bhavcopy · " +
             "${getString(R.string.health_pulse)} $pulse · " +
-            "${getString(R.string.health_nse)} $nse"
+            "${getString(R.string.health_nse)} $nse · " +
+            "${getString(R.string.health_gnews)} $gnews"
     }
 
-    private fun healthLabel(status: String?): String =
-        if (status == "ok") getString(R.string.health_ok) else getString(R.string.health_fail)
+    private fun healthLabel(status: String?): String = when (status) {
+        "ok" -> getString(R.string.health_ok)
+        "skip" -> getString(R.string.health_skip)
+        "partial" -> getString(R.string.health_partial)
+        "cached" -> getString(R.string.health_cached)
+        "fail" -> getString(R.string.health_fail)
+        else -> getString(R.string.health_fail)
+    }
 
     private fun formatIstTime(iso: String?): String {
         if (iso.isNullOrBlank()) return "—"

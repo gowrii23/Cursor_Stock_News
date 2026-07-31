@@ -1,8 +1,9 @@
-"""News fetch from Zerodha Pulse RSS + NSE corporate announcements."""
+"""News fetch from Zerodha Pulse RSS + NSE announcements + Google News."""
 from __future__ import annotations
 
 import logging
 import re
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
@@ -146,6 +147,63 @@ def demo_headlines(
             "date": today,
         }
     ]
+
+
+def fetch_google_news_for_tickers(
+    universe: List[Dict[str, Any]],
+    tickers: List[str],
+    limit_per_ticker: int = 12,
+) -> List[Dict[str, Any]]:
+    """Google News RSS for flagged tickers only (Tier A targeted news)."""
+    by_ticker = {u["ticker"]: u for u in universe}
+    items: List[Dict[str, Any]] = []
+    for ticker in tickers:
+        meta = by_ticker.get(ticker) or {"ticker": ticker, "name": ticker}
+        name = meta.get("name") or ticker
+        items.extend(
+            _fetch_google_news(ticker=ticker, name=name, limit=limit_per_ticker)
+        )
+    return items
+
+
+def _fetch_google_news(ticker: str, name: str, limit: int = 12) -> List[Dict[str, Any]]:
+    query = urllib.parse.quote(f'"{name}" OR {ticker} NSE stock')
+    url = (
+        "https://news.google.com/rss/search"
+        f"?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
+    )
+    items: List[Dict[str, Any]] = []
+    try:
+        resp = requests.get(url, headers=_HEADERS, timeout=20)
+        resp.raise_for_status()
+        try:
+            import feedparser
+
+            feed = feedparser.parse(resp.content)
+            for e in feed.entries[:limit]:
+                published = _parse_date(
+                    getattr(e, "published", None) or getattr(e, "updated", None)
+                )
+                published_at = _parse_datetime_iso(
+                    getattr(e, "published", None) or getattr(e, "updated", None)
+                )
+                items.append(
+                    {
+                        "ticker": ticker,
+                        "headline": getattr(e, "title", "") or "",
+                        "source": "gnews",
+                        "url": getattr(e, "link", "") or "",
+                        "date": published,
+                        "published_at": published_at,
+                    }
+                )
+        except Exception:
+            for row in _parse_rss_xml(resp.text, limit=limit, source="gnews"):
+                row["ticker"] = ticker
+                items.append(row)
+    except Exception as e:
+        logger.warning("Google News fetch failed for %s: %s", ticker, e)
+    return items
 
 
 def pulse_supplement(
