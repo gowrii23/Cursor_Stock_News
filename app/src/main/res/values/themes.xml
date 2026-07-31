@@ -1,13 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.BseBlueprintScreener" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimary">@color/metallic_highlight</item>
         <item name="colorSecondary">@color/accent</item>
+        <item name="colorOnPrimary">@color/bg_primary</item>
         <item name="android:statusBarColor">@color/bg_primary</item>
-        <item name="android:navigationBarColor">@color/bg_primary</item>
+        <item name="android:navigationBarColor">@color/bottom_nav_bg</item>
         <item name="android:windowBackground">@color/bg_primary</item>
         <item name="colorSurface">@color/bg_elevated</item>
         <item name="colorOnSurface">@color/text_primary</item>
         <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Widget.Bse.BottomNavigation" parent="Widget.Material3.BottomNavigationView">
+        <item name="android:background">@drawable/bg_bottom_nav</item>
+        <item name="itemIconTint">@color/bottom_nav_item_color</item>
+        <item name="itemTextColor">@color/bottom_nav_item_color</item>
+        <item name="itemActiveIndicatorStyle">@style/Widget.Bse.BottomNav.ActiveIndicator</item>
+        <item name="labelVisibilityMode">labeled</item>
+    </style>
+
+    <style name="Widget.Bse.BottomNav.ActiveIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">
+        <item name="android:color">@color/accent_soft</item>
+    </style>
+
+    <style name="Widget.Bse.MetallicButton" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/accent_soft</item>
+        <item name="android:textColor">@color/metallic_highlight</item>
     </style>
 </resources>

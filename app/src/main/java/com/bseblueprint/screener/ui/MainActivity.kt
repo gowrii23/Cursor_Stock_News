@@ -1,46 +1,32 @@
 package com.bseblueprint.screener.ui
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.fragment.app.Fragment
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.data.WatchlistItem
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), HomeFragment.Callback {
 
-    private lateinit var recycler: RecyclerView
-    private lateinit var emptyView: TextView
     private lateinit var subtitle: TextView
-    private lateinit var progress: ProgressBar
-    private lateinit var swipe: SwipeRefreshLayout
-    private lateinit var adapter: WatchlistAdapter
+    private lateinit var bottomNav: BottomNavigationView
     private val gson = Gson()
-
-    private val notifPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* no-op */ }
+    private var homeFragment: HomeFragment? = null
+    private var newsFragment: NewsFragment? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,40 +34,50 @@ class MainActivity : AppCompatActivity() {
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
-        supportActionBar?.title = "BSE Blueprint"
+        supportActionBar?.title = getString(R.string.app_name)
 
-        recycler = findViewById(R.id.recyclerWatchlist)
-        emptyView = findViewById(R.id.emptyView)
         subtitle = findViewById(R.id.subtitle)
-        progress = findViewById(R.id.progress)
-        swipe = findViewById(R.id.swipeRefresh)
+        bottomNav = findViewById(R.id.bottomNav)
 
-        adapter = WatchlistAdapter { item ->
-            startActivity(
-                Intent(this, StockDetailActivity::class.java)
-                    .putExtra(StockDetailActivity.EXTRA_TICKER, item.ticker)
-            )
+        if (savedInstanceState == null) {
+            homeFragment = HomeFragment()
+            newsFragment = NewsFragment()
+            supportFragmentManager.beginTransaction()
+                .add(R.id.fragmentContainer, newsFragment!!, TAG_NEWS)
+                .hide(newsFragment!!)
+                .add(R.id.fragmentContainer, homeFragment!!, TAG_HOME)
+                .commit()
+        } else {
+            homeFragment = supportFragmentManager.findFragmentByTag(TAG_HOME) as? HomeFragment
+            newsFragment = supportFragmentManager.findFragmentByTag(TAG_NEWS) as? NewsFragment
         }
-        recycler.layoutManager = LinearLayoutManager(this)
-        recycler.adapter = adapter
 
-        swipe.setOnRefreshListener { refreshDashboard(runScreen = true) }
-
-        maybeRequestNotifications()
-        loadDashboard(seedIfEmpty = true)
+        bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> {
+                    showFragment(TAG_HOME)
+                    supportActionBar?.title = getString(R.string.tab_home)
+                    true
+                }
+                R.id.nav_news -> {
+                    showFragment(TAG_NEWS)
+                    supportActionBar?.title = getString(R.string.tab_news)
+                    newsFragment?.loadNews()
+                    true
+                }
+                else -> false
+            }
+        }
+        bottomNav.selectedItemId = R.id.nav_home
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)
         return true
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.action_news -> {
-                startActivity(Intent(this, NewsFeedActivity::class.java))
-                true
-            }
             R.id.action_settings -> {
                 startActivity(Intent(this, SettingsActivity::class.java))
                 true
@@ -94,18 +90,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun maybeRequestNotifications() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val granted = ContextCompat.checkSelfPermission(
-                this, Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    private fun showFragment(tag: String) {
+        val home = homeFragment ?: return
+        val news = newsFragment ?: return
+        val tx = supportFragmentManager.beginTransaction()
+        if (tag == TAG_HOME) {
+            tx.show(home).hide(news)
+        } else {
+            tx.show(news).hide(home)
         }
+        tx.commit()
+    }
+
+    override fun onWatchlistItemClick(item: WatchlistItem) {
+        startActivity(
+            Intent(this, StockDetailActivity::class.java)
+                .putExtra(StockDetailActivity.EXTRA_TICKER, item.ticker)
+        )
+    }
+
+    override fun onRefreshRequested() {
+        refreshDashboard(runScreen = true)
+    }
+
+    override fun onLoadDashboard(seedIfEmpty: Boolean) {
+        loadDashboard(seedIfEmpty)
     }
 
     private fun loadDashboard(seedIfEmpty: Boolean) {
+        homeFragment?.setLoading(true)
         lifecycleScope.launch {
-            progress.visibility = View.VISIBLE
             try {
                 val dash = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
                 val arr = dash.getAsJsonArray("watchlist")
@@ -118,58 +132,74 @@ class MainActivity : AppCompatActivity() {
                     }
                     val dash2 = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
                     items = gson.fromJson(dash2.getAsJsonArray("watchlist"), type) ?: emptyList()
-                    val run = dash2.getAsJsonObject("latest_run")
-                    subtitle.text = "Demo mode · ${items.size} flags · ${run?.get("finished_at")?.asString ?: ""}"
+                    updateSubtitle(dash2, items)
                 } else {
-                    val run = dash.getAsJsonObject("latest_run")
-                    val date = items.firstOrNull()?.date ?: "—"
-                    subtitle.text = "Watchlist $date · ${items.size} flags"
-                    if (run != null && run.has("message")) {
-                        subtitle.append(" · ${run.get("message").asString}")
-                    }
+                    updateSubtitle(dash, items)
                 }
-                bindItems(items)
+                homeFragment?.bindItems(items)
             } catch (t: Throwable) {
                 t.printStackTrace()
                 Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
-                emptyView.visibility = View.VISIBLE
+                homeFragment?.showEmpty()
             } finally {
-                progress.visibility = View.GONE
-                swipe.isRefreshing = false
+                homeFragment?.setLoading(false)
+                homeFragment?.setRefreshing(false)
             }
         }
     }
 
     private fun refreshDashboard(runScreen: Boolean) {
+        if (bottomNav.selectedItemId != R.id.nav_home) {
+            bottomNav.selectedItemId = R.id.nav_home
+            showFragment(TAG_HOME)
+            supportActionBar?.title = getString(R.string.tab_home)
+        }
+        homeFragment?.setRefreshing(true)
+        subtitle.text = "Running EOD screen…"
         lifecycleScope.launch {
-            progress.visibility = View.VISIBLE
-            subtitle.text = "Running EOD screen…"
             try {
                 if (runScreen) {
                     val result = withContext(Dispatchers.IO) {
-                        // Try live; Python falls back to demo if needed
                         PythonBridge.runDailyScreen(useLive = true, forceDemo = false)
                     }
                     val mode = result.get("mode")?.asString ?: "?"
                     val flagged = result.get("flagged_count")?.asInt ?: 0
+                    val newsNote = if (mode == "live") "live news" else "demo headlines"
                     Toast.makeText(
                         this@MainActivity,
-                        "Screen done ($mode): $flagged flags",
+                        "Screen done ($mode, $newsNote): $flagged flags",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
                 loadDashboard(seedIfEmpty = false)
+                newsFragment?.loadNews()
             } catch (t: Throwable) {
                 Toast.makeText(this@MainActivity, "Run failed: ${t.message}", Toast.LENGTH_LONG).show()
-                progress.visibility = View.GONE
-                swipe.isRefreshing = false
+                homeFragment?.setRefreshing(false)
+                homeFragment?.setLoading(false)
             }
         }
     }
 
-    private fun bindItems(items: List<WatchlistItem>) {
-        adapter.submit(items)
-        emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-        recycler.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+    private fun updateSubtitle(dash: JsonObject, items: List<WatchlistItem>) {
+        val run = dash.getAsJsonObject("latest_run")
+        val mode = run?.get("message")?.asString?.let { parseMode(it) } ?: "demo"
+        val date = items.firstOrNull()?.date ?: "—"
+        val newsLine = if (mode == "live") {
+            getString(R.string.subtitle_live_news)
+        } else {
+            getString(R.string.subtitle_demo_news)
+        }
+        subtitle.text = "$newsLine · $date · ${items.size} flags"
+    }
+
+    private fun parseMode(message: String): String {
+        val token = message.split(" ").firstOrNull { it.startsWith("mode=") } ?: return "demo"
+        return token.removePrefix("mode=")
+    }
+
+    companion object {
+        private const val TAG_HOME = "home"
+        private const val TAG_NEWS = "news"
     }
 }
