@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
+import com.bseblueprint.screener.bridge.RunProgressReporter
 import com.bseblueprint.screener.data.WatchlistItem
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -22,13 +23,14 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-class MainActivity : AppCompatActivity(), HomeFragment.Callback {
+class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBottomSheet.Listener {
 
     private lateinit var subtitle: TextView
     private lateinit var bottomNav: BottomNavigationView
     private val gson = Gson()
     private var homeFragment: HomeFragment? = null
     private var newsFragment: NewsFragment? = null
+    private var runSheet: RunProgressBottomSheet? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,7 +87,7 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
                 true
             }
             R.id.action_run -> {
-                refreshDashboard(runScreen = true)
+                startRunWithProgress()
                 true
             }
             R.id.action_share -> {
@@ -124,7 +126,13 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
     }
 
     override fun onRefreshRequested() {
-        refreshDashboard(runScreen = true)
+        startRunWithProgress()
+    }
+
+    override fun onRunDismissed() {
+        runSheet = null
+        loadDashboard(seedIfEmpty = false)
+        newsFragment?.loadNews()
     }
 
     override fun onLoadDashboard(seedIfEmpty: Boolean) {
@@ -162,37 +170,52 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
         }
     }
 
-    private fun refreshDashboard(runScreen: Boolean) {
+    private fun startRunWithProgress() {
         if (bottomNav.selectedItemId != R.id.nav_home) {
             bottomNav.selectedItemId = R.id.nav_home
             showFragment(TAG_HOME)
             supportActionBar?.title = getString(R.string.tab_home)
         }
-        homeFragment?.setRefreshing(true)
-        subtitle.text = "Running EOD screen…"
+
+        val sheet = RunProgressBottomSheet.newInstance().also {
+            it.listener = this
+            runSheet = it
+        }
+        sheet.show(supportFragmentManager, RunProgressBottomSheet.TAG)
+
         lifecycleScope.launch {
             try {
-                if (runScreen) {
-                    val result = withContext(Dispatchers.IO) {
-                        PythonBridge.runDailyScreen(useLive = true, forceDemo = false)
-                    }
-                    val mode = result.get("mode")?.asString ?: "?"
-                    val flagged = result.get("flagged_count")?.asInt ?: 0
-                    val newsNote = if (mode == "live") "live news" else "demo headlines"
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Screen done ($mode, $newsNote): $flagged flags",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                val reporter = RunProgressReporter { percent, message ->
+                    runSheet?.updateProgress(percent, message)
                 }
-                loadDashboard(seedIfEmpty = false)
-                newsFragment?.loadNews()
+                val result = withContext(Dispatchers.IO) {
+                    PythonBridge.runDailyScreen(
+                        useLive = true,
+                        forceDemo = false,
+                        reporter = reporter
+                    )
+                }
+                val mode = result.get("mode")?.asString ?: "?"
+                val flagged = result.get("flagged_count")?.asInt ?: 0
+                val status = result.get("status")?.asString ?: "error"
+                val success = status == "ok" || status == "partial"
+                val summary = "Finished ($mode): $flagged flag(s)"
+                runSheet?.markComplete(success, summary)
+                subtitle.text = summary
             } catch (t: Throwable) {
+                t.printStackTrace()
+                runSheet?.markComplete(false, "Run failed: ${t.message}")
                 Toast.makeText(this@MainActivity, "Run failed: ${t.message}", Toast.LENGTH_LONG).show()
-                homeFragment?.setRefreshing(false)
-                homeFragment?.setLoading(false)
             }
         }
+    }
+
+    private fun refreshDashboard(runScreen: Boolean) {
+        if (runScreen) {
+            startRunWithProgress()
+            return
+        }
+        loadDashboard(seedIfEmpty = false)
     }
 
     private fun updateSubtitle(dash: JsonObject, items: List<WatchlistItem>) {

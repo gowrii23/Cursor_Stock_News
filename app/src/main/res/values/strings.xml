@@ -3,9 +3,9 @@
     <string name="app_name">BSE Blueprint</string>
     <string name="tab_home">Home</string>
     <string name="tab_news">News</string>
-    <string name="action_run_screen">Run screen</string>
+    <string name="action_run_screen">Run</string>
     <string name="action_settings">Settings</string>
-    <string name="watchlist_empty">No flags yet.\nPull to run the EOD screen.</string>
+    <string name="watchlist_empty">No flags yet.\nTap Run in the toolbar to start the EOD screen.</string>
     <string name="news_empty">No cached headlines. Run a screen first.</string>
     <string name="subtitle_demo_news">Demo · 1 mock flag [TEST] · synthetic headline</string>
     <string name="subtitle_live_news">Live · NSE prices + news feeds</string>
@@ -34,4 +34,10 @@
     <string name="health_skip">Skip</string>
     <string name="health_partial">Partial</string>
     <string name="health_cached">Cached</string>
+    <string name="run_progress_title">Running EOD screen</string>
+    <string name="run_progress_starting">Starting…</string>
+    <string name="run_progress_log_label">Live output</string>
+    <string name="run_progress_percent">%1$d%%</string>
+    <string name="run_progress_done">Done</string>
+    <string name="run_progress_close">Close</string>
 </resources>

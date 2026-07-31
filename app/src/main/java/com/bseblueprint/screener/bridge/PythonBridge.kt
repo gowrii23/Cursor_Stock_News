@@ -31,12 +31,17 @@ object PythonBridge {
 
     private fun module() = Python.getInstance().getModule("pipeline")
 
-    fun runDailyScreen(useLive: Boolean = true, forceDemo: Boolean = false): JsonObject {
+    fun runDailyScreen(
+        useLive: Boolean = true,
+        forceDemo: Boolean = false,
+        reporter: RunProgressReporter? = null
+    ): JsonObject {
         val raw = module().callAttr(
             "run_daily_screen",
             dbPath,
             useLive,
-            forceDemo
+            forceDemo,
+            reporter
         ).toString()
         return JsonParser.parseString(raw).asJsonObject
     }

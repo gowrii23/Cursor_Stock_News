@@ -23,15 +23,13 @@ Flags stocks where:
 
 ## Download (latest debug APK)
 
-**[Download APK v1.1.0](releases/bse-blueprint-screener-1.1.0-tier-a-debug.apk)** — Tier A data layer (NSE bhavcopy prices, Pulse + NSE + Google News, partial live mode).
+**[Download APK v1.2.0](releases/bse-blueprint-screener-1.2.0-debug.apk)** — Run progress modal with live log feed + Tier A data layer.
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.1.0-tier-a-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.2.0-debug.apk
 ```
-
-Previous build: [v1.0.0 Tier 1+2](releases/bse-blueprint-screener-1.0.0-tier1-2-debug.apk)
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.
 
@@ -57,7 +55,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## First launch
 
 - Seeds a **demo** watchlist offline so UI works immediately
-- Pull-to-refresh / menu **Run screen** fetches NSE bhavcopy (first run backfills ~280 trading days; allow 3–5 min on Wi‑Fi)
+- Tap **Run** in the toolbar to open the progress modal (live log + progress bar)
+- First run backfills ~280 trading days on Wi‑Fi (~3–8 min); progress is shown in the modal
 - Live news: Zerodha Pulse + NSE announcements + Google News for flagged stocks only
 - Tune keywords, z-threshold, and Blueprint JSON in **Settings**
 
