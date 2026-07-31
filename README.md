@@ -60,3 +60,4 @@ app/src/main/assets/           # Universe + Blueprint tags + defaults
 - Universe list is static JSON (refresh quarterly)
 - Severity keywords are a living config — expect iteration
 - Chaquopy free tier is intended for open-source / evaluation; review [Chaquopy licensing](https://chaquo.com/chaquopy/) before redistribution
+APK download helper
