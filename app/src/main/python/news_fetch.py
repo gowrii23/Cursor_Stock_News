@@ -17,6 +17,9 @@ NSE_ANNOUNCEMENTS = (
     "?index=equities&from_date={from_date}&to_date={to_date}"
 )
 
+# Single synthetic row for offline / demo mode
+DEMO_TICKER = "[TEST]"
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
@@ -120,39 +123,41 @@ def match_headlines_to_universe(
     return matched
 
 
-def demo_headlines(flagged_tickers: List[str], universe: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Synthetic headlines for offline / demo mode."""
+def demo_headlines(
+    flagged_tickers: Optional[List[str]] = None,
+    universe: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Single synthetic headline for offline / demo mode — one [TEST] row only."""
+    _ = flagged_tickers, universe  # legacy signature kept for callers
     today = datetime.utcnow().date().isoformat()
-    name_map = {u["ticker"]: u.get("name", u["ticker"]) for u in universe}
-    templates = [
-        "{name} faces brokerage downgrade after muted quarter",
-        "Profit booking hits {name} amid sector selloff",
-        "{name} guidance cut sparks one-off miss concerns",
-        "Margin pressure weighs on {name}; brokerage cuts target",
+    return [
+        {
+            "ticker": DEMO_TICKER,
+            "headline": (
+                "[TEST] synthetic mock — brokerage downgrade after muted quarter "
+                "(offline demo, not live news)"
+            ),
+            "source": "demo",
+            "url": "",
+            "date": today,
+        }
     ]
-    out = []
-    for i, t in enumerate(flagged_tickers):
-        name = name_map.get(t, t)
-        out.append(
-            {
-                "ticker": t,
-                "headline": templates[i % len(templates)].format(name=name),
-                "source": "demo",
-                "url": "",
-                "date": today,
-            }
-        )
-    # A couple of EXCLUDE examples for severity testing
-    if flagged_tickers:
-        out.append(
-            {
-                "ticker": flagged_tickers[0],
-                "headline": f"{name_map.get(flagged_tickers[0], flagged_tickers[0])} promoter pledge spike sparks worry",
-                "source": "demo",
-                "url": "",
-                "date": today,
-            }
-        )
+
+
+def pulse_supplement(
+    existing_headlines: List[str],
+    limit: int = 30,
+) -> List[Dict[str, Any]]:
+    """Zerodha Pulse headlines not already in the primary news list."""
+    seen = {h.strip().lower() for h in existing_headlines if h}
+    out: List[Dict[str, Any]] = []
+    for item in fetch_pulse_headlines(limit=limit + len(seen)):
+        headline = (item.get("headline") or "").strip()
+        if not headline or headline.lower() in seen:
+            continue
+        out.append(item)
+        if len(out) >= limit:
+            break
     return out
 
 

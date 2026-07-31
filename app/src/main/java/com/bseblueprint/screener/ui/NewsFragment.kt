@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -27,7 +28,6 @@ class NewsFragment : Fragment() {
     private lateinit var progress: ProgressBar
     private lateinit var adapter: NewsAdapter
     private val gson = Gson()
-    private var loaded = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -47,7 +47,7 @@ class NewsFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        if (!loaded) loadNews()
+        loadNews()
     }
 
     fun loadNews() {
@@ -57,12 +57,26 @@ class NewsFragment : Fragment() {
             try {
                 val payload = withContext(Dispatchers.IO) { PythonBridge.getNews() }
                 val type = object : TypeToken<List<NewsItem>>() {}.type
-                val items: List<NewsItem> =
+                val primary: List<NewsItem> =
                     gson.fromJson(payload.getAsJsonArray("news"), type) ?: emptyList()
-                adapter.submit(items)
-                emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-                recycler.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
-                loaded = true
+                val pulse: List<NewsItem> =
+                    if (payload.has("pulse_feed") && !payload.get("pulse_feed").isJsonNull) {
+                        gson.fromJson(payload.getAsJsonArray("pulse_feed"), type) ?: emptyList()
+                    } else {
+                        emptyList()
+                    }
+
+                val rows = mutableListOf<NewsRow>()
+                primary.forEach { rows.add(NewsRow.Item(it)) }
+                if (pulse.isNotEmpty()) {
+                    rows.add(NewsRow.SectionHeader(getString(R.string.news_pulse_section)))
+                    pulse.forEach { rows.add(NewsRow.Item(it)) }
+                }
+
+                adapter.submit(rows)
+                val hasContent = rows.isNotEmpty()
+                emptyView.visibility = if (hasContent) View.GONE else View.VISIBLE
+                recycler.visibility = if (hasContent) View.VISIBLE else View.GONE
             } catch (t: Throwable) {
                 emptyView.text = "Failed: ${t.message}"
                 emptyView.visibility = View.VISIBLE
@@ -74,32 +88,59 @@ class NewsFragment : Fragment() {
     }
 }
 
-class NewsAdapter : RecyclerView.Adapter<NewsAdapter.VH>() {
-    private val items = mutableListOf<NewsItem>()
+sealed class NewsRow {
+    data class SectionHeader(val title: String) : NewsRow()
+    data class Item(val news: NewsItem) : NewsRow()
+}
 
-    fun submit(data: List<NewsItem>) {
+class NewsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+    private val items = mutableListOf<NewsRow>()
+
+    fun submit(data: List<NewsRow>) {
         items.clear()
         items.addAll(data)
         notifyDataSetChanged()
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(R.layout.item_news, parent, false)
-        return VH(v)
+    override fun getItemViewType(position: Int): Int = when (items[position]) {
+        is NewsRow.SectionHeader -> VIEW_HEADER
+        is NewsRow.Item -> VIEW_NEWS
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return if (viewType == VIEW_HEADER) {
+            HeaderVH(inflater.inflate(R.layout.item_news_section, parent, false))
+        } else {
+            NewsVH(inflater.inflate(R.layout.item_news, parent, false))
+        }
     }
 
     override fun getItemCount() = items.size
 
-    override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        when (val row = items[position]) {
+            is NewsRow.SectionHeader -> (holder as HeaderVH).bind(row.title)
+            is NewsRow.Item -> (holder as NewsVH).bind(row.news)
+        }
+    }
 
-    class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
+    class HeaderVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val title: TextView = itemView.findViewById(R.id.txtSectionHeader)
+        fun bind(text: String) {
+            title.text = text
+        }
+    }
+
+    class NewsVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val title: TextView = itemView.findViewById(R.id.txtHeadline)
         private val meta: TextView = itemView.findViewById(R.id.txtMeta)
         private val severity: TextView = itemView.findViewById(R.id.txtSeverity)
 
         fun bind(item: NewsItem) {
             title.text = item.headline ?: "—"
-            meta.text = listOfNotNull(item.ticker, item.source, item.date).joinToString(" · ")
+            val tickerLabel = item.ticker?.takeIf { it.isNotBlank() } ?: "—"
+            meta.text = listOfNotNull(tickerLabel, item.source, item.date).joinToString(" · ")
             val tag = item.severity_tag ?: "UNKNOWN"
             severity.text = tag
             val color = when (tag) {
@@ -109,5 +150,10 @@ class NewsAdapter : RecyclerView.Adapter<NewsAdapter.VH>() {
             }
             severity.setTextColor(ContextCompat.getColor(itemView.context, color))
         }
+    }
+
+    companion object {
+        private const val VIEW_HEADER = 0
+        private const val VIEW_NEWS = 1
     }
 }

@@ -41,10 +41,22 @@ class NewsFeedActivity : AppCompatActivity() {
             try {
                 val payload = withContext(Dispatchers.IO) { PythonBridge.getNews() }
                 val type = object : TypeToken<List<NewsItem>>() {}.type
-                val items: List<NewsItem> =
+                val primary: List<NewsItem> =
                     gson.fromJson(payload.getAsJsonArray("news"), type) ?: emptyList()
-                adapter.submit(items)
-                empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                val pulse: List<NewsItem> =
+                    if (payload.has("pulse_feed") && !payload.get("pulse_feed").isJsonNull) {
+                        gson.fromJson(payload.getAsJsonArray("pulse_feed"), type) ?: emptyList()
+                    } else {
+                        emptyList()
+                    }
+                val rows = mutableListOf<NewsRow>()
+                primary.forEach { rows.add(NewsRow.Item(it)) }
+                if (pulse.isNotEmpty()) {
+                    rows.add(NewsRow.SectionHeader(getString(R.string.news_pulse_section)))
+                    pulse.forEach { rows.add(NewsRow.Item(it)) }
+                }
+                adapter.submit(rows)
+                empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             } catch (t: Throwable) {
                 empty.text = "Failed: ${t.message}"
                 empty.visibility = View.VISIBLE

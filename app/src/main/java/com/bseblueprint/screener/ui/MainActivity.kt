@@ -103,6 +103,10 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
     }
 
     override fun onWatchlistItemClick(item: WatchlistItem) {
+        if (item.ticker == "[TEST]") {
+            Toast.makeText(this, R.string.demo_ticker_toast, Toast.LENGTH_SHORT).show()
+            return
+        }
         startActivity(
             Intent(this, StockDetailActivity::class.java)
                 .putExtra(StockDetailActivity.EXTRA_TICKER, item.ticker)
