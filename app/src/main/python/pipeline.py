@@ -26,6 +26,7 @@ from news_fetch import (
 )
 from severity_filter import classify_best, classify_severity
 from market_time import timing_vs_market_close
+from progress_report import report
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -145,11 +146,13 @@ def run_daily_screen(
     db_path: Optional[str] = None,
     use_live: bool = True,
     force_demo: bool = False,
+    progress_cb: Any = None,
 ) -> str:
     """
     Run the full EOD pipeline. Returns JSON string for Kotlin.
     """
     started = datetime.utcnow().isoformat()
+    report(progress_cb, 1, "Initializing database…")
     db = init_db(db_path)
     try:
         universe = db.get_universe()
@@ -158,6 +161,7 @@ def run_daily_screen(
             db.upsert_universe(universe)
 
         tickers = [u["ticker"] for u in universe]
+        report(progress_cb, 3, f"Universe loaded: {len(tickers)} tickers")
         z_threshold = float(db.get_setting("z_threshold", -1.5))
         min_idio = float(db.get_setting("min_idio_return", -0.015))
         exclude_kw = db.get_setting("exclude_keywords", None)
@@ -172,17 +176,21 @@ def run_daily_screen(
             bp_map = load_json_asset("blueprint_tags.json", {})
 
         if force_demo or not use_live:
+            report(progress_cb, 100, "Demo mode complete")
             return _run_demo_screen(db, started, exclude_kw, candidate_kw)
 
         prices: Dict[str, Any] = {}
         mode = "live"
         price_health: Dict[str, str] = {"bhavcopy": "fail"}
         try:
-            prices, price_health = fetch_ohlc_nse(tickers, db, include_index=True)
+            prices, price_health = fetch_ohlc_nse(
+                tickers, db, include_index=True, progress_cb=progress_cb
+            )
             have_tickers = len([t for t in tickers if t in prices])
             if "NIFTY50" not in prices or have_tickers < max(15, len(tickers) // 5):
                 cached = db.get_watchlist()
                 if cached:
+                    report(progress_cb, 100, f"Using cached watchlist ({len(cached)} flags)")
                     finished = datetime.utcnow().isoformat()
                     msg = (
                         f"mode=cached universe={len(tickers)} flagged={len(cached)} "
@@ -234,6 +242,7 @@ def run_daily_screen(
         if index_df is None or index_df.empty:
             raise RuntimeError("Missing index prices")
 
+        report(progress_cb, 76, "Computing beta / alpha / z-scores…")
         # Compute per-ticker metrics
         metrics_rows = []
         alpha_1y_list = []
@@ -277,6 +286,7 @@ def run_daily_screen(
             }
 
         db.upsert_daily_metrics(metrics_rows)
+        report(progress_cb, 82, f"Metrics saved for {len(metrics_rows)} tickers")
 
         # Flag idiosyncratic drops (z-score + minimum idiosyncratic move)
         flagged = []
@@ -291,22 +301,37 @@ def run_daily_screen(
             if ok and idio <= min_idio:
                 flagged.append((t, idio, z))
 
+        report(progress_cb, 85, f"Flagged {len(flagged)} idiosyncratic drops")
+
         # News — bulk feeds + Google News for flagged tickers only
         news_items: List[Dict[str, Any]] = []
+        report(progress_cb, 86, "Fetching Zerodha Pulse headlines…")
         pulse_raw = fetch_pulse_headlines()
-        nse_raw = fetch_nse_announcements()
         pulse_ok = len(pulse_raw) > 0
+        report(progress_cb, 89, f"Pulse: {len(pulse_raw)} headlines")
+        report(progress_cb, 90, "Fetching NSE corporate announcements…")
+        nse_raw = fetch_nse_announcements()
         nse_ok = len(nse_raw) > 0
+        report(progress_cb, 93, f"NSE announcements: {len(nse_raw)} rows")
         flagged_tickers = [t for t, _, _ in flagged]
         gnews_raw: List[Dict[str, Any]] = []
         gnews_ok = False
         if flagged_tickers:
+            report(
+                progress_cb,
+                94,
+                f"Fetching Google News for {len(flagged_tickers)} flagged tickers…",
+            )
             gnews_raw = fetch_google_news_for_tickers(universe, flagged_tickers)
             gnews_ok = len(gnews_raw) > 0
+            report(progress_cb, 96, f"Google News: {len(gnews_raw)} headlines")
+        else:
+            report(progress_cb, 96, "Google News: skipped (no flags)")
         news_items = match_headlines_to_universe(pulse_raw + nse_raw, universe)
         # Google News already has ticker attached
         news_items.extend(gnews_raw)
 
+        report(progress_cb, 97, "Classifying severity and scoring…")
         # Classify + score
         news_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
         for n in news_items:
@@ -384,6 +409,7 @@ def run_daily_screen(
         if flat_news:
             db.insert_news(flat_news)
 
+        report(progress_cb, 99, f"Watchlist ready: {len(watch_rows)} flags")
         finished = datetime.utcnow().isoformat()
         bhav_status = price_health.get("bhavcopy", "ok")
         msg = (
@@ -408,6 +434,7 @@ def run_daily_screen(
             ),
             "watchlist": watch_rows,
         }
+        report(progress_cb, 100, f"Done — {len(watch_rows)} flags ({mode} mode)")
         return json.dumps(result)
     except Exception as e:
         finished = datetime.utcnow().isoformat()

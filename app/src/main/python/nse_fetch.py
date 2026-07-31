@@ -32,10 +32,14 @@ _HEADERS = {
 }
 
 
+from progress_report import report
+
+
 def fetch_ohlc_nse(
     tickers: List[str],
     db: Any,
     include_index: bool = True,
+    progress_cb: Any = None,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, str]]:
     """
     Sync NSE bhavcopy history into SQLite and return ticker -> OHLC DataFrame.
@@ -43,7 +47,9 @@ def fetch_ohlc_nse(
     """
     health: Dict[str, str] = {"bhavcopy": "fail"}
     try:
-        added = _sync_history(db, tickers, include_index=include_index)
+        report(progress_cb, 5, "Starting NSE bhavcopy sync…")
+        added = _sync_history(db, tickers, include_index=include_index, progress_cb=progress_cb)
+        report(progress_cb, 74, "Building price series from cache…")
         prices = _build_frames_from_db(db, tickers, include_index=include_index)
         have = len([t for t in tickers if t in prices])
         if include_index and "NIFTY50" in prices:
@@ -55,6 +61,7 @@ def fetch_ohlc_nse(
             health["bhavcopy"] = "partial"
         if added:
             logger.info("NSE sync added %d trading days", added)
+            report(progress_cb, 75, f"NSE sync complete (+{added} trading days)")
     except Exception as e:
         logger.warning("NSE price sync failed: %s", e)
         prices = _build_frames_from_db(db, tickers, include_index=include_index)
@@ -63,7 +70,7 @@ def fetch_ohlc_nse(
     return prices, health
 
 
-def _sync_history(db: Any, tickers: List[str], include_index: bool) -> int:
+def _sync_history(db: Any, tickers: List[str], include_index: bool, progress_cb: Any = None) -> int:
     """Download missing bhavcopy/index files up to per-run cap."""
     ticker_set = {t.upper() for t in tickers}
     min_tickers_per_day = max(15, int(len(ticker_set) * 0.5))
@@ -75,6 +82,12 @@ def _sync_history(db: Any, tickers: List[str], include_index: bool) -> int:
     target_days = int(db.get_setting("price_backfill_days", TARGET_TRADING_DAYS))
     target_days = max(MIN_TRADING_DAYS, min(target_days, 400))
     need = max(0, target_days - len(complete_dates))
+    total_to_fetch = max(need, 1)
+    report(
+        progress_cb,
+        6,
+        f"Price history: {len(complete_dates)}/{target_days} days cached, fetching up to {total_to_fetch}…",
+    )
 
     added = 0
     scanned = 0
@@ -91,6 +104,7 @@ def _sync_history(db: Any, tickers: List[str], include_index: bool) -> int:
             or db.count_tickers_for_date(iso) < min_tickers_per_day
         )
         if incomplete:
+            report(progress_cb, _sync_percent(added, total_to_fetch), f"Downloading bhavcopy {iso}…")
             bhav_rows, index_close = _download_day(d)
             if bhav_rows:
                 filtered = [r for r in bhav_rows if r["ticker"] in ticker_set]
@@ -101,11 +115,21 @@ def _sync_history(db: Any, tickers: List[str], include_index: bool) -> int:
                 if filtered:
                     complete_dates.add(iso)
                     added += 1
+                    report(
+                        progress_cb,
+                        _sync_percent(added, total_to_fetch),
+                        f"Saved {iso} ({len(filtered)} tickers, day {added}/{total_to_fetch})",
+                    )
                 if len(complete_dates) >= target_days and added >= 1:
                     break
         d -= timedelta(days=1)
         scanned += 1
     return added
+
+
+def _sync_percent(added: int, total: int) -> int:
+    span = 68  # 6% → 74%
+    return 6 + int(span * min(added, total) / max(total, 1))
 
 
 def _download_day(d: date) -> Tuple[List[Dict[str, Any]], Optional[float]]:

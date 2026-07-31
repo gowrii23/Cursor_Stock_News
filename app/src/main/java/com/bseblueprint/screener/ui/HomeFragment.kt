@@ -63,7 +63,7 @@ class HomeFragment : Fragment() {
         recycler.adapter = adapter
 
         swipe.setColorSchemeResources(R.color.metallic_highlight, R.color.accent)
-        swipe.setOnRefreshListener { callback?.onRefreshRequested() }
+        swipe.isEnabled = false
 
         filterChips.setOnCheckedStateChangeListener { _, checkedIds ->
             currentFilter = when (checkedIds.firstOrNull()) {
