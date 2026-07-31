@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BSE Blueprint</string>
+    <string name="watchlist_empty">No flags yet.\nPull to run the EOD screen.</string>
+    <string name="news_empty">No cached headlines. Run a screen first.</string>
+</resources>

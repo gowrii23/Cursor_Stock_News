@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Utilitarian finance palette: deep navy + teal, not purple -->
+    <color name="bg_primary">#0B1F2A</color>
+    <color name="bg_elevated">#122B38</color>
+    <color name="bg_row">#153544</color>
+    <color name="text_primary">#F1F5F9</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="accent">#0D9488</color>
+    <color name="accent_soft">#134E4A</color>
+    <color name="severity_candidate">#34D399</color>
+    <color name="severity_exclude">#F87171</color>
+    <color name="severity_unknown">#FBBF24</color>
+    <color name="divider">#1E3A47</color>
+</resources>

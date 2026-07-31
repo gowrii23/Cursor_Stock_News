@@ -1,0 +1,16 @@
+{
+  "MEDIASSIST": ["regulatory-moat", "asset-light"],
+  "PROTEAN": ["formalization-play", "regulatory-moat"],
+  "KFINTECH": ["asset-light", "formalization-play"],
+  "IRCTC": ["regulatory-moat", "asset-light"],
+  "OFSS": ["asset-light"],
+  "NAUKRI": ["asset-light", "formalization-play"],
+  "PAYTM": ["formalization-play"],
+  "ZOMATO": ["formalization-play"],
+  "NYKAA": ["formalization-play"],
+  "BEL": ["regulatory-moat"],
+  "HAL": ["regulatory-moat"],
+  "POWERGRID": ["regulatory-moat"],
+  "PFC": ["formalization-play"],
+  "RECLTD": ["formalization-play"]
+}
