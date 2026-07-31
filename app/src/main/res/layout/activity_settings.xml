@@ -10,9 +10,9 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/bg_primary"
-        app:navigationIconTint="@color/text_primary"
-        app:titleTextColor="@color/text_primary" />
+        android:background="@drawable/bg_metallic_toolbar"
+        app:navigationIconTint="@color/metallic_highlight"
+        app:titleTextColor="@color/metallic_highlight" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -53,7 +53,20 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:hint="EXCLUDE keywords (one per line)">
+                android:hint="@string/settings_min_idio_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/edtMinIdio"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal|numberSigned" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/settings_exclude_hint">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/edtExcludeKeywords"
@@ -68,7 +81,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:hint="CANDIDATE keywords (one per line)">
+                android:hint="@string/settings_candidate_hint">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/edtCandidateKeywords"
@@ -83,7 +96,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:hint="BSE Blueprint tags JSON">
+                android:hint="@string/settings_blueprint_hint">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/edtBlueprintJson"

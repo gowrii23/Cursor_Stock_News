@@ -28,6 +28,7 @@ class SettingsActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
 
         val edtZ = findViewById<TextInputEditText>(R.id.edtZThreshold)
+        val edtMinIdio = findViewById<TextInputEditText>(R.id.edtMinIdio)
         val edtBeta = findViewById<TextInputEditText>(R.id.edtBetaThreshold)
         val edtExclude = findViewById<TextInputEditText>(R.id.edtExcludeKeywords)
         val edtCandidate = findViewById<TextInputEditText>(R.id.edtCandidateKeywords)
@@ -41,6 +42,7 @@ class SettingsActivity : AppCompatActivity() {
             try {
                 val settings = withContext(Dispatchers.IO) { PythonBridge.getSettings() }
                 edtZ.setText(jsonNumber(settings, "z_threshold", "-1.5"))
+                edtMinIdio.setText(jsonNumber(settings, "min_idio_return", "-0.015"))
                 edtBeta.setText(jsonNumber(settings, "beta_low_threshold", "0.8"))
                 val excl = settings.getAsJsonArray("exclude_keywords")
                     ?.joinToString("\n") { it.asString } ?: ""
@@ -61,6 +63,7 @@ class SettingsActivity : AppCompatActivity() {
                 try {
                     val payload = mapOf(
                         "z_threshold" to (edtZ.text?.toString()?.toDoubleOrNull() ?: -1.5),
+                        "min_idio_return" to (edtMinIdio.text?.toString()?.toDoubleOrNull() ?: -0.015),
                         "beta_low_threshold" to (edtBeta.text?.toString()?.toDoubleOrNull() ?: 0.8),
                         "exclude_keywords" to edtExclude.text?.toString()
                             ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),

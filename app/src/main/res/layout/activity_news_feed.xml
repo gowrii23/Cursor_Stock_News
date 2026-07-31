@@ -10,9 +10,9 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/bg_primary"
-        app:navigationIconTint="@color/text_primary"
-        app:titleTextColor="@color/text_primary" />
+        android:background="@drawable/bg_metallic_toolbar"
+        app:navigationIconTint="@color/metallic_highlight"
+        app:titleTextColor="@color/metallic_highlight" />
 
     <FrameLayout
         android:layout_width="match_parent"

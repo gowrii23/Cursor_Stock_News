@@ -10,17 +10,20 @@ from typing import Any, Dict, List, Optional
 
 from beta_alpha import percentile_rank, residual_std, rolling_windows
 from blueprint_tagger import load_blueprint_map, tags_for
-from conviction_score import conviction_score
-from data_fetch import align_returns, fetch_ohlc, generate_demo_prices
+from conviction_score import conviction_score, conviction_score_breakdown
+from data_fetch import align_returns, fetch_ohlc
 from db import Database
 from drop_detector import is_idiosyncratic_drop
 from news_fetch import (
+    DEMO_TICKER,
     demo_headlines,
     fetch_nse_announcements,
     fetch_pulse_headlines,
     match_headlines_to_universe,
+    pulse_supplement,
 )
 from severity_filter import classify_best, classify_severity
+from market_time import timing_vs_market_close
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +67,78 @@ def init_db(db_path: Optional[str] = None) -> Database:
     return db
 
 
+def _run_demo_screen(
+    db: Database,
+    started: str,
+    exclude_kw: Any,
+    candidate_kw: Any,
+) -> str:
+    """Offline demo: one [TEST] watchlist row + synthetic headline (not live news)."""
+    asof_date = datetime.utcnow().date().isoformat()
+    news_items = demo_headlines()
+    for n in news_items:
+        n["severity_tag"] = classify_severity(
+            n.get("headline", ""), exclude_kw, candidate_kw
+        )
+
+    demo = news_items[0]
+    severity = demo["severity_tag"]
+    z = -2.35
+    breakdown = conviction_score_breakdown(
+        z_drop=z,
+        alpha_percentile=0.55,
+        beta=0.95,
+        severity_tag=severity,
+        blueprint_match=False,
+    )
+    score = breakdown["total"]
+    watch_rows = [
+        {
+            "ticker": DEMO_TICKER,
+            "z_score": z,
+            "idiosyncratic_return": -0.028,
+            "daily_return": -0.031,
+            "headline": demo["headline"],
+            "source": "demo",
+            "severity_tag": severity,
+            "blueprint_tags": [],
+            "conviction_score": score,
+            "score_breakdown": breakdown,
+            "beta_1y": 0.95,
+            "alpha_1y": 0.08,
+            "alpha_percentile": 0.55,
+        }
+    ]
+
+    db.replace_watchlist_for_date(asof_date, watch_rows)
+    db.insert_news(
+        [
+            {
+                "ticker": DEMO_TICKER,
+                "date": asof_date,
+                "headline": demo["headline"],
+                "source": "demo",
+                "url": "",
+                "severity_tag": severity,
+            }
+        ]
+    )
+
+    finished = datetime.utcnow().isoformat()
+    msg = f"mode=demo universe=1 flagged=1 mock={DEMO_TICKER}"
+    db.log_run(started, finished, "ok", msg, 1)
+    return json.dumps(
+        {
+            "status": "ok",
+            "mode": "demo",
+            "date": asof_date,
+            "flagged_count": 1,
+            "message": msg,
+            "watchlist": watch_rows,
+        }
+    )
+
+
 def run_daily_screen(
     db_path: Optional[str] = None,
     use_live: bool = True,
@@ -82,6 +157,7 @@ def run_daily_screen(
 
         tickers = [u["ticker"] for u in universe]
         z_threshold = float(db.get_setting("z_threshold", -1.5))
+        min_idio = float(db.get_setting("min_idio_return", -0.015))
         exclude_kw = db.get_setting("exclude_keywords", None)
         candidate_kw = db.get_setting("candidate_keywords", None)
 
@@ -93,23 +169,21 @@ def run_daily_screen(
         if not bp_map:
             bp_map = load_json_asset("blueprint_tags.json", {})
 
-        prices: Dict[str, Any] = {}
-        mode = "demo"
-        if use_live and not force_demo:
-            try:
-                prices = fetch_ohlc(tickers, period="3y", include_index=True)
-                if "NIFTY50" in prices and len(prices) > 20:
-                    mode = "live"
-                else:
-                    logger.warning("Live fetch incomplete (%d series); using demo", len(prices))
-                    prices = {}
-            except Exception as e:
-                logger.warning("Live fetch error: %s", e)
-                prices = {}
+        if force_demo or not use_live:
+            return _run_demo_screen(db, started, exclude_kw, candidate_kw)
 
-        if not prices:
-            prices = generate_demo_prices(tickers)
-            mode = "demo"
+        prices: Dict[str, Any] = {}
+        mode = "live"
+        try:
+            prices = fetch_ohlc(tickers, period="3y", include_index=True)
+            if "NIFTY50" not in prices or len(prices) <= 20:
+                logger.warning(
+                    "Live fetch incomplete (%d series); falling back to demo", len(prices)
+                )
+                return _run_demo_screen(db, started, exclude_kw, candidate_kw)
+        except Exception as e:
+            logger.warning("Live fetch error: %s", e)
+            return _run_demo_screen(db, started, exclude_kw, candidate_kw)
 
         index_df = prices.get("NIFTY50")
         if index_df is None or index_df.empty:
@@ -159,7 +233,7 @@ def run_daily_screen(
 
         db.upsert_daily_metrics(metrics_rows)
 
-        # Flag idiosyncratic drops
+        # Flag idiosyncratic drops (z-score + minimum idiosyncratic move)
         flagged = []
         for t, st in stock_stats.items():
             ok, idio, z = is_idiosyncratic_drop(
@@ -169,23 +243,25 @@ def run_daily_screen(
                 st["idio_std"],
                 z_threshold=z_threshold,
             )
-            if ok:
+            if ok and idio <= min_idio:
                 flagged.append((t, idio, z))
 
-        # News
+        # News — live matched headlines only (no synthetic fallback)
         news_items: List[Dict[str, Any]] = []
-        if mode == "live":
-            pulse = fetch_pulse_headlines()
-            nse = fetch_nse_announcements()
-            news_items = match_headlines_to_universe(pulse + nse, universe)
-        if not news_items:
-            news_items = demo_headlines([t for t, _, _ in flagged], universe)
+        pulse_raw = fetch_pulse_headlines()
+        nse_raw = fetch_nse_announcements()
+        pulse_ok = len(pulse_raw) > 0
+        nse_ok = len(nse_raw) > 0
+        news_items = match_headlines_to_universe(pulse_raw + nse_raw, universe)
 
         # Classify + score
         news_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
         for n in news_items:
             n["severity_tag"] = classify_severity(
                 n.get("headline", ""), exclude_kw, candidate_kw
+            )
+            n["timing_vs_close"] = timing_vs_market_close(
+                n.get("published_at"), n.get("date")
             )
             news_by_ticker.setdefault(n.get("ticker") or "", []).append(n)
 
@@ -201,23 +277,26 @@ def run_daily_screen(
             source = related[0].get("source", "") if related else ""
             bp = tags_for(t, bp_map)
             alpha_pct = percentile_rank(alpha_1y_list, st["alpha_1y"])
-            score = conviction_score(
+            breakdown = conviction_score_breakdown(
                 z_drop=z,
                 alpha_percentile=alpha_pct,
                 beta=st["beta_1y"],
                 severity_tag=severity,
                 blueprint_match=bool(bp),
             )
+            score = breakdown["total"]
             watch_rows.append(
                 {
                     "ticker": t,
                     "z_score": z,
                     "idiosyncratic_return": idio,
+                    "daily_return": st["stock_ret_today"],
                     "headline": headline,
                     "source": source,
                     "severity_tag": severity,
                     "blueprint_tags": bp,
                     "conviction_score": score,
+                    "score_breakdown": breakdown,
                     "beta_1y": None if _nan(st["beta_1y"]) else float(st["beta_1y"]),
                     "alpha_1y": None if _nan(st["alpha_1y"]) else float(st["alpha_1y"]),
                     "alpha_percentile": alpha_pct,
@@ -245,13 +324,18 @@ def run_daily_screen(
                         "source": r.get("source"),
                         "url": r.get("url"),
                         "severity_tag": r.get("severity_tag"),
+                        "published_at": r.get("published_at"),
+                        "timing_vs_close": r.get("timing_vs_close"),
                     }
                 )
         if flat_news:
             db.insert_news(flat_news)
 
         finished = datetime.utcnow().isoformat()
-        msg = f"mode={mode} universe={len(tickers)} flagged={len(watch_rows)}"
+        msg = (
+            f"mode={mode} universe={len(tickers)} flagged={len(watch_rows)} "
+            f"yahoo=ok pulse={'ok' if pulse_ok else 'fail'} nse={'ok' if nse_ok else 'fail'}"
+        )
         db.log_run(started, finished, "ok", msg, len(watch_rows))
 
         result = {
@@ -260,6 +344,11 @@ def run_daily_screen(
             "date": asof_date,
             "flagged_count": len(watch_rows),
             "message": msg,
+            "data_health": {
+                "yahoo": "ok",
+                "pulse": "ok" if pulse_ok else "fail",
+                "nse": "ok" if nse_ok else "fail",
+            },
             "watchlist": watch_rows,
         }
         return json.dumps(result)
@@ -276,12 +365,30 @@ def run_daily_screen(
         db.close()
 
 
+def _parse_run_health(run: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not run:
+        return {"mode": "unknown", "yahoo": "unknown", "pulse": "unknown", "nse": "unknown"}
+    msg = run.get("message") or ""
+    health = {"mode": "demo", "yahoo": "unknown", "pulse": "unknown", "nse": "unknown"}
+    for token in msg.split():
+        if token.startswith("mode="):
+            health["mode"] = token.split("=", 1)[1]
+        elif token.startswith("yahoo="):
+            health["yahoo"] = token.split("=", 1)[1]
+        elif token.startswith("pulse="):
+            health["pulse"] = token.split("=", 1)[1]
+        elif token.startswith("nse="):
+            health["nse"] = token.split("=", 1)[1]
+    return health
+
+
 def get_dashboard_json(db_path: Optional[str] = None) -> str:
     db = init_db(db_path)
     try:
         watch = db.get_watchlist()
         run = db.latest_run()
-        return json.dumps({"watchlist": watch, "latest_run": run})
+        health = _parse_run_health(run)
+        return json.dumps({"watchlist": watch, "latest_run": run, "data_health": health})
     finally:
         db.close()
 
@@ -294,6 +401,7 @@ def get_stock_detail_json(ticker: str, db_path: Optional[str] = None) -> str:
         news = db.get_news(ticker=ticker, limit=40)
         universe = {u["ticker"]: u for u in db.get_universe()}
         bp = load_json_asset("blueprint_tags.json", {})
+        latest_breakdown = history[0].get("score_breakdown") if history else None
         return json.dumps(
             {
                 "ticker": ticker,
@@ -302,6 +410,7 @@ def get_stock_detail_json(ticker: str, db_path: Optional[str] = None) -> str:
                 "metrics": metrics,
                 "watch_history": history,
                 "news": news,
+                "score_breakdown": latest_breakdown,
             }
         )
     finally:
@@ -311,7 +420,25 @@ def get_stock_detail_json(ticker: str, db_path: Optional[str] = None) -> str:
 def get_news_json(ticker: Optional[str] = None, db_path: Optional[str] = None) -> str:
     db = init_db(db_path)
     try:
-        return json.dumps({"news": db.get_news(ticker=ticker, limit=150)})
+        primary = db.get_news(ticker=ticker, limit=150)
+        pulse_feed: List[Dict[str, Any]] = []
+        if ticker is None:
+            exclude_kw = db.get_setting("exclude_keywords", None)
+            candidate_kw = db.get_setting("candidate_keywords", None)
+            existing = [n.get("headline") or "" for n in primary]
+            # Show Zerodha Pulse at bottom when nothing matched, or as supplement
+            if not primary or all(n.get("source") == "demo" for n in primary):
+                pulse_feed = pulse_supplement(existing, limit=30)
+            elif not any(n.get("source") in ("pulse", "nse") for n in primary):
+                pulse_feed = pulse_supplement(existing, limit=25)
+            for item in pulse_feed:
+                item["severity_tag"] = classify_severity(
+                    item.get("headline", ""), exclude_kw, candidate_kw
+                )
+                item["timing_vs_close"] = timing_vs_market_close(
+                    item.get("published_at"), item.get("date")
+                )
+        return json.dumps({"news": primary, "pulse_feed": pulse_feed})
     finally:
         db.close()
 
@@ -321,6 +448,7 @@ def get_settings_json(db_path: Optional[str] = None) -> str:
     try:
         keys = [
             "z_threshold",
+            "min_idio_return",
             "beta_low_threshold",
             "job_hour_ist",
             "require_wifi",

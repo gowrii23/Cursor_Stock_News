@@ -1,9 +1,7 @@
 package com.bseblueprint.screener.ui
 
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -19,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Legacy entry point — prefer MainActivity News tab. */
 class NewsFeedActivity : AppCompatActivity() {
     private val gson = Gson()
 
@@ -28,7 +27,7 @@ class NewsFeedActivity : AppCompatActivity() {
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
-        supportActionBar?.title = "News Feed"
+        supportActionBar?.title = getString(R.string.tab_news)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         toolbar.setNavigationOnClickListener { finish() }
 
@@ -42,48 +41,26 @@ class NewsFeedActivity : AppCompatActivity() {
             try {
                 val payload = withContext(Dispatchers.IO) { PythonBridge.getNews() }
                 val type = object : TypeToken<List<NewsItem>>() {}.type
-                val items: List<NewsItem> =
+                val primary: List<NewsItem> =
                     gson.fromJson(payload.getAsJsonArray("news"), type) ?: emptyList()
-                adapter.submit(items)
-                empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                val pulse: List<NewsItem> =
+                    if (payload.has("pulse_feed") && !payload.get("pulse_feed").isJsonNull) {
+                        gson.fromJson(payload.getAsJsonArray("pulse_feed"), type) ?: emptyList()
+                    } else {
+                        emptyList()
+                    }
+                val rows = mutableListOf<NewsRow>()
+                primary.forEach { rows.add(NewsRow.Item(it)) }
+                if (pulse.isNotEmpty()) {
+                    rows.add(NewsRow.SectionHeader(getString(R.string.news_pulse_section)))
+                    pulse.forEach { rows.add(NewsRow.Item(it)) }
+                }
+                adapter.submit(rows)
+                empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             } catch (t: Throwable) {
                 empty.text = "Failed: ${t.message}"
                 empty.visibility = View.VISIBLE
             }
-        }
-    }
-}
-
-class NewsAdapter : RecyclerView.Adapter<NewsAdapter.VH>() {
-    private val items = mutableListOf<NewsItem>()
-
-    fun submit(data: List<NewsItem>) {
-        items.clear()
-        items.addAll(data)
-        notifyDataSetChanged()
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(R.layout.item_news, parent, false)
-        return VH(v)
-    }
-
-    override fun getItemCount() = items.size
-
-    override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
-
-    class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val title: TextView = itemView.findViewById(R.id.txtHeadline)
-        private val meta: TextView = itemView.findViewById(R.id.txtMeta)
-
-        fun bind(item: NewsItem) {
-            title.text = item.headline ?: "—"
-            meta.text = listOfNotNull(
-                item.ticker,
-                item.source,
-                item.severity_tag,
-                item.date
-            ).joinToString(" · ")
         }
     }
 }

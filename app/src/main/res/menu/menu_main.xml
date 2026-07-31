@@ -3,15 +3,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/action_run"
-        android:title="Run screen"
         android:icon="@drawable/ic_refresh"
+        android:title="@string/action_run_screen"
+        app:iconTint="@color/metallic_highlight"
         app:showAsAction="ifRoom" />
     <item
-        android:id="@+id/action_news"
-        android:title="News"
+        android:id="@+id/action_share"
+        android:title="@string/action_share"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_settings"
-        android:title="Settings"
+        android:title="@string/action_settings"
         app:showAsAction="never" />
 </menu>

@@ -22,6 +22,21 @@ class Database:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         self._init_schema()
+        self._migrate_schema()
+
+    def _migrate_schema(self) -> None:
+        cur = self.conn.cursor()
+        watch_cols = {row[1] for row in cur.execute("PRAGMA table_info(watchlist)")}
+        if "daily_return" not in watch_cols:
+            cur.execute("ALTER TABLE watchlist ADD COLUMN daily_return REAL")
+        if "score_breakdown" not in watch_cols:
+            cur.execute("ALTER TABLE watchlist ADD COLUMN score_breakdown TEXT")
+        news_cols = {row[1] for row in cur.execute("PRAGMA table_info(news_cache)")}
+        if "published_at" not in news_cols:
+            cur.execute("ALTER TABLE news_cache ADD COLUMN published_at TEXT")
+        if "timing_vs_close" not in news_cols:
+            cur.execute("ALTER TABLE news_cache ADD COLUMN timing_vs_close TEXT")
+        self.conn.commit()
 
     def _init_schema(self) -> None:
         cur = self.conn.cursor()
@@ -164,8 +179,8 @@ class Database:
                 INSERT INTO watchlist(
                   ticker, date, z_score, idiosyncratic_return, headline, source,
                   severity_tag, blueprint_tags, conviction_score, beta_1y,
-                  alpha_1y, alpha_percentile
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  alpha_1y, alpha_percentile, daily_return, score_breakdown
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["ticker"],
@@ -180,6 +195,10 @@ class Database:
                     row.get("beta_1y"),
                     row.get("alpha_1y"),
                     row.get("alpha_percentile"),
+                    row.get("daily_return"),
+                    json.dumps(row.get("score_breakdown"))
+                    if row.get("score_breakdown") is not None
+                    else None,
                 ),
             )
         self.conn.commit()
@@ -206,6 +225,11 @@ class Database:
                 d["blueprint_tags"] = json.loads(d.get("blueprint_tags") or "[]")
             except Exception:
                 d["blueprint_tags"] = []
+            try:
+                raw = d.get("score_breakdown")
+                d["score_breakdown"] = json.loads(raw) if raw else None
+            except Exception:
+                d["score_breakdown"] = None
             out.append(d)
         return out
 
@@ -240,6 +264,11 @@ class Database:
                 d["blueprint_tags"] = json.loads(d.get("blueprint_tags") or "[]")
             except Exception:
                 d["blueprint_tags"] = []
+            try:
+                raw = d.get("score_breakdown")
+                d["score_breakdown"] = json.loads(raw) if raw else None
+            except Exception:
+                d["score_breakdown"] = None
             out.append(d)
         return out
 
@@ -248,8 +277,11 @@ class Database:
         for row in rows:
             cur.execute(
                 """
-                INSERT INTO news_cache(ticker, date, headline, source, url, severity_tag)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO news_cache(
+                  ticker, date, headline, source, url, severity_tag,
+                  published_at, timing_vs_close
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row.get("ticker"),
@@ -258,6 +290,8 @@ class Database:
                     row.get("source"),
                     row.get("url"),
                     row.get("severity_tag"),
+                    row.get("published_at"),
+                    row.get("timing_vs_close"),
                 ),
             )
         self.conn.commit()
