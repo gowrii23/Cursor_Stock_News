@@ -11,6 +11,7 @@ local.properties
 captures/
 .DS_Store
 *.apk
+!releases/*.apk
 *.aab
 *.ap_
 *.dex

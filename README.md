@@ -21,6 +21,18 @@ Flags stocks where:
 - WorkManager daily job (Wi‑Fi / charging constraints configurable)
 - On-device SQLite history
 
+## Download (latest debug APK)
+
+**[Download APK](releases/bse-blueprint-screener-1.0.0-tier1-2-debug.apk)** — Tier 1+2 build (actionable filters, metrics, score breakdown, data health).
+
+Direct link (raw):
+
+```
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.0.0-tier1-2-debug.apk
+```
+
+On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.
+
 ## Build (debug APK)
 
 ```bash
@@ -60,4 +72,3 @@ app/src/main/assets/           # Universe + Blueprint tags + defaults
 - Universe list is static JSON (refresh quarterly)
 - Severity keywords are a living config — expect iteration
 - Chaquopy free tier is intended for open-source / evaluation; review [Chaquopy licensing](https://chaquo.com/chaquopy/) before redistribution
-APK download helper
