@@ -8,7 +8,7 @@
     <string name="watchlist_empty">No flags yet.\nPull to run the EOD screen.</string>
     <string name="news_empty">No cached headlines. Run a screen first.</string>
     <string name="subtitle_demo_news">Demo · 1 mock flag [TEST] · synthetic headline</string>
-    <string name="subtitle_live_news">Live · Pulse + NSE headlines</string>
+    <string name="subtitle_live_news">Live · NSE prices + news feeds</string>
     <string name="settings_exclude_hint">EXCLUDE — red-flag keywords (fraud, SEBI action, insolvency…)</string>
     <string name="settings_candidate_hint">CANDIDATE — overreaction-friendly news (downgrade, miss, guidance cut…)</string>
     <string name="settings_blueprint_hint">BSE Blueprint theme tags per ticker (JSON)</string>
@@ -25,9 +25,13 @@
     <string name="timing_after_close">After close</string>
     <string name="timing_unknown">Timing unknown</string>
     <string name="score_breakdown_title">Score breakdown</string>
-    <string name="health_yahoo">Yahoo</string>
+    <string name="health_bhavcopy">NSE</string>
     <string name="health_pulse">Pulse</string>
-    <string name="health_nse">NSE</string>
+    <string name="health_nse">NSE news</string>
+    <string name="health_gnews">GNews</string>
     <string name="health_ok">OK</string>
     <string name="health_fail">Fail</string>
+    <string name="health_skip">Skip</string>
+    <string name="health_partial">Partial</string>
+    <string name="health_cached">Cached</string>
 </resources>

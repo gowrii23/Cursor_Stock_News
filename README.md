@@ -9,7 +9,7 @@ Personal Android APK: EOD news-driven overreaction screener for Nifty 50 + Next 
 Flags stocks where:
 
 1. Price fell idiosyncratically vs beta-implied index move (`z < -1.5` by default)
-2. Matching news exists (Pulse / NSE / demo fallback)
+2. Matching news exists (NSE bhavcopy prices + Pulse / NSE announcements / Google News for flags)
 3. Severity keyword filter tags `CANDIDATE` / `EXCLUDE` / `UNKNOWN`
 4. Optional BSE Blueprint theme tags apply
 5. Composite conviction score ranks the watchlist
@@ -17,19 +17,21 @@ Flags stocks where:
 ## Stack
 
 - Kotlin UI (Dashboard, Stock Detail + MPAndroidChart, News Feed, Settings)
-- Python logic via [Chaquopy](https://chaquo.com/chaquopy/) (`pandas`, `numpy`, Yahoo chart API via `requests`, `feedparser`)
+- Python logic via [Chaquopy](https://chaquo.com/chaquopy/) (`pandas`, `numpy`, NSE bhavcopy CSV, Pulse/NSE/Google News RSS)
 - WorkManager daily job (Wi‑Fi / charging constraints configurable)
 - On-device SQLite history
 
 ## Download (latest debug APK)
 
-**[Download APK](releases/bse-blueprint-screener-1.0.0-tier1-2-debug.apk)** — Tier 1+2 build (actionable filters, metrics, score breakdown, data health).
+**[Download APK v1.1.0](releases/bse-blueprint-screener-1.1.0-tier-a-debug.apk)** — Tier A data layer (NSE bhavcopy prices, Pulse + NSE + Google News, partial live mode).
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.0.0-tier1-2-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.1.0-tier-a-debug.apk
 ```
+
+Previous build: [v1.0.0 Tier 1+2](releases/bse-blueprint-screener-1.0.0-tier1-2-debug.apk)
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.
 
@@ -55,7 +57,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## First launch
 
 - Seeds a **demo** watchlist offline so UI works immediately
-- Pull-to-refresh / menu **Run screen** tries live `yfinance` + Pulse; falls back to demo if network/data fails
+- Pull-to-refresh / menu **Run screen** fetches NSE bhavcopy (first run backfills ~280 trading days; allow 3–5 min on Wi‑Fi)
+- Live news: Zerodha Pulse + NSE announcements + Google News for flagged stocks only
 - Tune keywords, z-threshold, and Blueprint JSON in **Settings**
 
 ## Project layout

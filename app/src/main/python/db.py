@@ -99,6 +99,22 @@ class Database:
               key TEXT PRIMARY KEY,
               value TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS price_history (
+              ticker TEXT,
+              date TEXT,
+              open REAL,
+              high REAL,
+              low REAL,
+              close REAL,
+              volume REAL,
+              PRIMARY KEY (ticker, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS index_history (
+              date TEXT PRIMARY KEY,
+              close REAL
+            );
             """
         )
         self.conn.commit()
@@ -329,6 +345,80 @@ class Database:
         cur = self.conn.cursor()
         row = cur.execute("SELECT * FROM run_log ORDER BY id DESC LIMIT 1").fetchone()
         return dict(row) if row else None
+
+    def upsert_price_history(self, rows: List[Dict[str, Any]]) -> None:
+        cur = self.conn.cursor()
+        for row in rows:
+            cur.execute(
+                """
+                INSERT INTO price_history(ticker, date, open, high, low, close, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker, date) DO UPDATE SET
+                  open=excluded.open,
+                  high=excluded.high,
+                  low=excluded.low,
+                  close=excluded.close,
+                  volume=excluded.volume
+                """,
+                (
+                    row["ticker"],
+                    row["date"],
+                    row.get("open"),
+                    row.get("high"),
+                    row.get("low"),
+                    row.get("close"),
+                    row.get("volume"),
+                ),
+            )
+        self.conn.commit()
+
+    def upsert_index_history(self, day: str, close: float) -> None:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO index_history(date, close) VALUES (?, ?)
+            ON CONFLICT(date) DO UPDATE SET close=excluded.close
+            """,
+            (day, close),
+        )
+        self.conn.commit()
+
+    def get_cached_price_dates(self) -> List[str]:
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            "SELECT DISTINCT date FROM price_history ORDER BY date"
+        ).fetchall()
+        return [r["date"] for r in rows]
+
+    def count_tickers_for_date(self, day: str) -> int:
+        cur = self.conn.cursor()
+        row = cur.execute(
+            "SELECT COUNT(DISTINCT ticker) AS c FROM price_history WHERE date = ?",
+            (day,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def get_price_history(self, ticker: str, limit: int = 400) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            """
+            SELECT date, open, high, low, close, volume
+            FROM price_history
+            WHERE ticker = ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (ticker.upper(), limit),
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    def get_index_history(self, limit: int = 400) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            "SELECT date, close FROM index_history ORDER BY date DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]
 
     def set_setting(self, key: str, value: Any) -> None:
         cur = self.conn.cursor()

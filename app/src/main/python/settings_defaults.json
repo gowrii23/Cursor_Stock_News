@@ -5,6 +5,7 @@
   "job_hour_ist": 18,
   "require_wifi": true,
   "require_charging": false,
+  "price_backfill_days": 280,
   "exclude_keywords": [
     "fraud",
     "scam",

@@ -11,12 +11,14 @@ from typing import Any, Dict, List, Optional
 from beta_alpha import percentile_rank, residual_std, rolling_windows
 from blueprint_tagger import load_blueprint_map, tags_for
 from conviction_score import conviction_score, conviction_score_breakdown
-from data_fetch import align_returns, fetch_ohlc
+from data_fetch import align_returns
 from db import Database
 from drop_detector import is_idiosyncratic_drop
+from nse_fetch import fetch_ohlc_nse
 from news_fetch import (
     DEMO_TICKER,
     demo_headlines,
+    fetch_google_news_for_tickers,
     fetch_nse_announcements,
     fetch_pulse_headlines,
     match_headlines_to_universe,
@@ -174,15 +176,58 @@ def run_daily_screen(
 
         prices: Dict[str, Any] = {}
         mode = "live"
+        price_health: Dict[str, str] = {"bhavcopy": "fail"}
         try:
-            prices = fetch_ohlc(tickers, period="3y", include_index=True)
-            if "NIFTY50" not in prices or len(prices) <= 20:
+            prices, price_health = fetch_ohlc_nse(tickers, db, include_index=True)
+            have_tickers = len([t for t in tickers if t in prices])
+            if "NIFTY50" not in prices or have_tickers < max(15, len(tickers) // 5):
+                cached = db.get_watchlist()
+                if cached:
+                    finished = datetime.utcnow().isoformat()
+                    msg = (
+                        f"mode=cached universe={len(tickers)} flagged={len(cached)} "
+                        f"bhavcopy={price_health.get('bhavcopy', 'fail')} "
+                        f"reason=insufficient_prices"
+                    )
+                    db.log_run(started, finished, "partial", msg, len(cached))
+                    return json.dumps(
+                        {
+                            "status": "partial",
+                            "mode": "cached",
+                            "date": cached[0].get("date"),
+                            "flagged_count": len(cached),
+                            "message": msg,
+                            "data_health": _build_health(
+                                mode="cached",
+                                bhavcopy=price_health.get("bhavcopy", "fail"),
+                            ),
+                            "watchlist": cached,
+                        }
+                    )
                 logger.warning(
-                    "Live fetch incomplete (%d series); falling back to demo", len(prices)
+                    "NSE prices insufficient (%d/%d); no cache — demo seed",
+                    have_tickers,
+                    len(tickers),
                 )
                 return _run_demo_screen(db, started, exclude_kw, candidate_kw)
         except Exception as e:
-            logger.warning("Live fetch error: %s", e)
+            logger.warning("NSE price fetch error: %s", e)
+            cached = db.get_watchlist()
+            if cached:
+                finished = datetime.utcnow().isoformat()
+                msg = f"mode=cached universe={len(tickers)} flagged={len(cached)} bhavcopy=fail"
+                db.log_run(started, finished, "partial", msg, len(cached))
+                return json.dumps(
+                    {
+                        "status": "partial",
+                        "mode": "cached",
+                        "date": cached[0].get("date"),
+                        "flagged_count": len(cached),
+                        "message": msg,
+                        "data_health": _build_health(mode="cached", bhavcopy="fail"),
+                        "watchlist": cached,
+                    }
+                )
             return _run_demo_screen(db, started, exclude_kw, candidate_kw)
 
         index_df = prices.get("NIFTY50")
@@ -246,13 +291,21 @@ def run_daily_screen(
             if ok and idio <= min_idio:
                 flagged.append((t, idio, z))
 
-        # News — live matched headlines only (no synthetic fallback)
+        # News — bulk feeds + Google News for flagged tickers only
         news_items: List[Dict[str, Any]] = []
         pulse_raw = fetch_pulse_headlines()
         nse_raw = fetch_nse_announcements()
         pulse_ok = len(pulse_raw) > 0
         nse_ok = len(nse_raw) > 0
+        flagged_tickers = [t for t, _, _ in flagged]
+        gnews_raw: List[Dict[str, Any]] = []
+        gnews_ok = False
+        if flagged_tickers:
+            gnews_raw = fetch_google_news_for_tickers(universe, flagged_tickers)
+            gnews_ok = len(gnews_raw) > 0
         news_items = match_headlines_to_universe(pulse_raw + nse_raw, universe)
+        # Google News already has ticker attached
+        news_items.extend(gnews_raw)
 
         # Classify + score
         news_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
@@ -332,9 +385,11 @@ def run_daily_screen(
             db.insert_news(flat_news)
 
         finished = datetime.utcnow().isoformat()
+        bhav_status = price_health.get("bhavcopy", "ok")
         msg = (
             f"mode={mode} universe={len(tickers)} flagged={len(watch_rows)} "
-            f"yahoo=ok pulse={'ok' if pulse_ok else 'fail'} nse={'ok' if nse_ok else 'fail'}"
+            f"bhavcopy={bhav_status} pulse={'ok' if pulse_ok else 'fail'} "
+            f"nse={'ok' if nse_ok else 'fail'} gnews={'ok' if gnews_ok else 'skip'}"
         )
         db.log_run(started, finished, "ok", msg, len(watch_rows))
 
@@ -344,11 +399,13 @@ def run_daily_screen(
             "date": asof_date,
             "flagged_count": len(watch_rows),
             "message": msg,
-            "data_health": {
-                "yahoo": "ok",
-                "pulse": "ok" if pulse_ok else "fail",
-                "nse": "ok" if nse_ok else "fail",
-            },
+            "data_health": _build_health(
+                mode=mode,
+                bhavcopy=bhav_status,
+                pulse="ok" if pulse_ok else "fail",
+                nse="ok" if nse_ok else "fail",
+                gnews="ok" if gnews_ok else "skip",
+            ),
             "watchlist": watch_rows,
         }
         return json.dumps(result)
@@ -365,20 +422,41 @@ def run_daily_screen(
         db.close()
 
 
+def _build_health(
+    mode: str = "live",
+    bhavcopy: str = "unknown",
+    pulse: str = "unknown",
+    nse: str = "unknown",
+    gnews: str = "unknown",
+) -> Dict[str, str]:
+    return {
+        "mode": mode,
+        "bhavcopy": bhavcopy,
+        "pulse": pulse,
+        "nse": nse,
+        "gnews": gnews,
+    }
+
+
 def _parse_run_health(run: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not run:
-        return {"mode": "unknown", "yahoo": "unknown", "pulse": "unknown", "nse": "unknown"}
+        return _build_health(mode="unknown")
     msg = run.get("message") or ""
-    health = {"mode": "demo", "yahoo": "unknown", "pulse": "unknown", "nse": "unknown"}
+    health = _build_health(mode="demo")
     for token in msg.split():
         if token.startswith("mode="):
             health["mode"] = token.split("=", 1)[1]
+        elif token.startswith("bhavcopy="):
+            health["bhavcopy"] = token.split("=", 1)[1]
         elif token.startswith("yahoo="):
-            health["yahoo"] = token.split("=", 1)[1]
+            # Legacy runs before Tier A
+            health["bhavcopy"] = token.split("=", 1)[1]
         elif token.startswith("pulse="):
             health["pulse"] = token.split("=", 1)[1]
         elif token.startswith("nse="):
             health["nse"] = token.split("=", 1)[1]
+        elif token.startswith("gnews="):
+            health["gnews"] = token.split("=", 1)[1]
     return health
 
 
