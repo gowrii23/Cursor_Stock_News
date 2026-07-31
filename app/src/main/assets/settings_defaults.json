@@ -1,5 +1,6 @@
 {
   "z_threshold": -1.5,
+  "min_idio_return": -0.015,
   "beta_low_threshold": 0.8,
   "job_hour_ist": 18,
   "require_wifi": true,

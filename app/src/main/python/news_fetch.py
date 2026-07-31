@@ -43,12 +43,16 @@ def fetch_pulse_headlines(limit: int = 200) -> List[Dict[str, Any]]:
                 published = _parse_date(
                     getattr(e, "published", None) or getattr(e, "updated", None)
                 )
+                published_at = _parse_datetime_iso(
+                    getattr(e, "published", None) or getattr(e, "updated", None)
+                )
                 items.append(
                     {
                         "headline": getattr(e, "title", "") or "",
                         "source": "pulse",
                         "url": getattr(e, "link", "") or "",
                         "date": published,
+                        "published_at": published_at,
                     }
                 )
         except Exception:
@@ -188,6 +192,27 @@ def _parse_rss_xml(xml_text: str, limit: int, source: str) -> List[Dict[str, Any
     except Exception as e:
         logger.warning("RSS XML parse failed: %s", e)
     return items
+
+
+def _parse_datetime_iso(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        import email.utils
+
+        dt = email.utils.parsedate_to_datetime(value.strip())
+        return dt.isoformat()
+    except Exception:
+        pass
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%a, %d %b %Y %H:%M:%S %z",
+    ):
+        try:
+            return datetime.strptime(value.strip(), fmt).isoformat()
+        except Exception:
+            continue
+    return None
 
 
 def _parse_date(value: Optional[str]) -> str:

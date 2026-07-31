@@ -31,6 +31,15 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/txtMetrics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="@color/metallic_highlight"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
         android:id="@+id/txtHeadline"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -12,12 +12,16 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.bseblueprint.screener.R
+import com.bseblueprint.screener.data.WatchlistFilter
 import com.bseblueprint.screener.data.WatchlistItem
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 
 class HomeFragment : Fragment() {
 
     interface Callback {
         fun onWatchlistItemClick(item: WatchlistItem)
+        fun onWatchlistItemShare(item: WatchlistItem)
         fun onRefreshRequested()
         fun onLoadDashboard(seedIfEmpty: Boolean)
     }
@@ -27,7 +31,10 @@ class HomeFragment : Fragment() {
     private lateinit var emptyView: TextView
     private lateinit var progress: ProgressBar
     private lateinit var swipe: SwipeRefreshLayout
+    private lateinit var filterChips: ChipGroup
     private lateinit var adapter: WatchlistAdapter
+    private var allItems: List<WatchlistItem> = emptyList()
+    private var currentFilter: WatchlistFilter = WatchlistFilter.ACTIONABLE
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
@@ -46,13 +53,27 @@ class HomeFragment : Fragment() {
         emptyView = view.findViewById(R.id.emptyView)
         progress = view.findViewById(R.id.progress)
         swipe = view.findViewById(R.id.swipeRefresh)
+        filterChips = view.findViewById(R.id.filterChips)
 
-        adapter = WatchlistAdapter { item -> callback?.onWatchlistItemClick(item) }
+        adapter = WatchlistAdapter(
+            onClick = { item -> callback?.onWatchlistItemClick(item) },
+            onShare = { item -> callback?.onWatchlistItemShare(item) }
+        )
         recycler.layoutManager = LinearLayoutManager(requireContext())
         recycler.adapter = adapter
 
         swipe.setColorSchemeResources(R.color.metallic_highlight, R.color.accent)
         swipe.setOnRefreshListener { callback?.onRefreshRequested() }
+
+        filterChips.setOnCheckedStateChangeListener { _, checkedIds ->
+            currentFilter = when (checkedIds.firstOrNull()) {
+                R.id.chipReview -> WatchlistFilter.REVIEW
+                R.id.chipBlocked -> WatchlistFilter.BLOCKED
+                else -> WatchlistFilter.ACTIONABLE
+            }
+            applyFilter()
+        }
+        view.findViewById<Chip>(R.id.chipActionable).isChecked = true
 
         if (savedInstanceState == null) {
             callback?.onLoadDashboard(seedIfEmpty = true)
@@ -60,12 +81,35 @@ class HomeFragment : Fragment() {
     }
 
     fun bindItems(items: List<WatchlistItem>) {
-        adapter.submit(items)
-        emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-        recycler.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        allItems = items
+        applyFilter()
     }
 
+    private fun applyFilter() {
+        val filtered = allItems.filter { item ->
+            when (currentFilter) {
+                WatchlistFilter.ACTIONABLE -> item.severity_tag == "CANDIDATE"
+                WatchlistFilter.REVIEW -> item.severity_tag == "UNKNOWN"
+                WatchlistFilter.BLOCKED -> item.severity_tag == "EXCLUDE"
+            }
+        }
+        adapter.submit(filtered)
+        val empty = filtered.isEmpty()
+        emptyView.text = if (allItems.isEmpty()) {
+            getString(R.string.watchlist_empty)
+        } else {
+            getString(R.string.filter_empty)
+        }
+        emptyView.visibility = if (empty) View.VISIBLE else View.GONE
+        recycler.visibility = if (empty) View.GONE else View.VISIBLE
+    }
+
+    fun getActionableItems(): List<WatchlistItem> =
+        allItems.filter { it.severity_tag == "CANDIDATE" }
+
     fun showEmpty() {
+        allItems = emptyList()
+        adapter.submit(emptyList())
         emptyView.visibility = View.VISIBLE
         recycler.visibility = View.GONE
     }

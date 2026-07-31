@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from beta_alpha import percentile_rank, residual_std, rolling_windows
 from blueprint_tagger import load_blueprint_map, tags_for
-from conviction_score import conviction_score
+from conviction_score import conviction_score, conviction_score_breakdown
 from data_fetch import align_returns, fetch_ohlc
 from db import Database
 from drop_detector import is_idiosyncratic_drop
@@ -23,6 +23,7 @@ from news_fetch import (
     pulse_supplement,
 )
 from severity_filter import classify_best, classify_severity
+from market_time import timing_vs_market_close
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -83,23 +84,26 @@ def _run_demo_screen(
     demo = news_items[0]
     severity = demo["severity_tag"]
     z = -2.35
-    score = conviction_score(
+    breakdown = conviction_score_breakdown(
         z_drop=z,
         alpha_percentile=0.55,
         beta=0.95,
         severity_tag=severity,
         blueprint_match=False,
     )
+    score = breakdown["total"]
     watch_rows = [
         {
             "ticker": DEMO_TICKER,
             "z_score": z,
             "idiosyncratic_return": -0.028,
+            "daily_return": -0.031,
             "headline": demo["headline"],
             "source": "demo",
             "severity_tag": severity,
             "blueprint_tags": [],
             "conviction_score": score,
+            "score_breakdown": breakdown,
             "beta_1y": 0.95,
             "alpha_1y": 0.08,
             "alpha_percentile": 0.55,
@@ -153,6 +157,7 @@ def run_daily_screen(
 
         tickers = [u["ticker"] for u in universe]
         z_threshold = float(db.get_setting("z_threshold", -1.5))
+        min_idio = float(db.get_setting("min_idio_return", -0.015))
         exclude_kw = db.get_setting("exclude_keywords", None)
         candidate_kw = db.get_setting("candidate_keywords", None)
 
@@ -228,7 +233,7 @@ def run_daily_screen(
 
         db.upsert_daily_metrics(metrics_rows)
 
-        # Flag idiosyncratic drops
+        # Flag idiosyncratic drops (z-score + minimum idiosyncratic move)
         flagged = []
         for t, st in stock_stats.items():
             ok, idio, z = is_idiosyncratic_drop(
@@ -238,20 +243,25 @@ def run_daily_screen(
                 st["idio_std"],
                 z_threshold=z_threshold,
             )
-            if ok:
+            if ok and idio <= min_idio:
                 flagged.append((t, idio, z))
 
         # News — live matched headlines only (no synthetic fallback)
         news_items: List[Dict[str, Any]] = []
-        pulse = fetch_pulse_headlines()
-        nse = fetch_nse_announcements()
-        news_items = match_headlines_to_universe(pulse + nse, universe)
+        pulse_raw = fetch_pulse_headlines()
+        nse_raw = fetch_nse_announcements()
+        pulse_ok = len(pulse_raw) > 0
+        nse_ok = len(nse_raw) > 0
+        news_items = match_headlines_to_universe(pulse_raw + nse_raw, universe)
 
         # Classify + score
         news_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
         for n in news_items:
             n["severity_tag"] = classify_severity(
                 n.get("headline", ""), exclude_kw, candidate_kw
+            )
+            n["timing_vs_close"] = timing_vs_market_close(
+                n.get("published_at"), n.get("date")
             )
             news_by_ticker.setdefault(n.get("ticker") or "", []).append(n)
 
@@ -267,23 +277,26 @@ def run_daily_screen(
             source = related[0].get("source", "") if related else ""
             bp = tags_for(t, bp_map)
             alpha_pct = percentile_rank(alpha_1y_list, st["alpha_1y"])
-            score = conviction_score(
+            breakdown = conviction_score_breakdown(
                 z_drop=z,
                 alpha_percentile=alpha_pct,
                 beta=st["beta_1y"],
                 severity_tag=severity,
                 blueprint_match=bool(bp),
             )
+            score = breakdown["total"]
             watch_rows.append(
                 {
                     "ticker": t,
                     "z_score": z,
                     "idiosyncratic_return": idio,
+                    "daily_return": st["stock_ret_today"],
                     "headline": headline,
                     "source": source,
                     "severity_tag": severity,
                     "blueprint_tags": bp,
                     "conviction_score": score,
+                    "score_breakdown": breakdown,
                     "beta_1y": None if _nan(st["beta_1y"]) else float(st["beta_1y"]),
                     "alpha_1y": None if _nan(st["alpha_1y"]) else float(st["alpha_1y"]),
                     "alpha_percentile": alpha_pct,
@@ -311,13 +324,18 @@ def run_daily_screen(
                         "source": r.get("source"),
                         "url": r.get("url"),
                         "severity_tag": r.get("severity_tag"),
+                        "published_at": r.get("published_at"),
+                        "timing_vs_close": r.get("timing_vs_close"),
                     }
                 )
         if flat_news:
             db.insert_news(flat_news)
 
         finished = datetime.utcnow().isoformat()
-        msg = f"mode={mode} universe={len(tickers)} flagged={len(watch_rows)}"
+        msg = (
+            f"mode={mode} universe={len(tickers)} flagged={len(watch_rows)} "
+            f"yahoo=ok pulse={'ok' if pulse_ok else 'fail'} nse={'ok' if nse_ok else 'fail'}"
+        )
         db.log_run(started, finished, "ok", msg, len(watch_rows))
 
         result = {
@@ -326,6 +344,11 @@ def run_daily_screen(
             "date": asof_date,
             "flagged_count": len(watch_rows),
             "message": msg,
+            "data_health": {
+                "yahoo": "ok",
+                "pulse": "ok" if pulse_ok else "fail",
+                "nse": "ok" if nse_ok else "fail",
+            },
             "watchlist": watch_rows,
         }
         return json.dumps(result)
@@ -342,12 +365,30 @@ def run_daily_screen(
         db.close()
 
 
+def _parse_run_health(run: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not run:
+        return {"mode": "unknown", "yahoo": "unknown", "pulse": "unknown", "nse": "unknown"}
+    msg = run.get("message") or ""
+    health = {"mode": "demo", "yahoo": "unknown", "pulse": "unknown", "nse": "unknown"}
+    for token in msg.split():
+        if token.startswith("mode="):
+            health["mode"] = token.split("=", 1)[1]
+        elif token.startswith("yahoo="):
+            health["yahoo"] = token.split("=", 1)[1]
+        elif token.startswith("pulse="):
+            health["pulse"] = token.split("=", 1)[1]
+        elif token.startswith("nse="):
+            health["nse"] = token.split("=", 1)[1]
+    return health
+
+
 def get_dashboard_json(db_path: Optional[str] = None) -> str:
     db = init_db(db_path)
     try:
         watch = db.get_watchlist()
         run = db.latest_run()
-        return json.dumps({"watchlist": watch, "latest_run": run})
+        health = _parse_run_health(run)
+        return json.dumps({"watchlist": watch, "latest_run": run, "data_health": health})
     finally:
         db.close()
 
@@ -360,6 +401,7 @@ def get_stock_detail_json(ticker: str, db_path: Optional[str] = None) -> str:
         news = db.get_news(ticker=ticker, limit=40)
         universe = {u["ticker"]: u for u in db.get_universe()}
         bp = load_json_asset("blueprint_tags.json", {})
+        latest_breakdown = history[0].get("score_breakdown") if history else None
         return json.dumps(
             {
                 "ticker": ticker,
@@ -368,6 +410,7 @@ def get_stock_detail_json(ticker: str, db_path: Optional[str] = None) -> str:
                 "metrics": metrics,
                 "watch_history": history,
                 "news": news,
+                "score_breakdown": latest_breakdown,
             }
         )
     finally:
@@ -392,6 +435,9 @@ def get_news_json(ticker: Optional[str] = None, db_path: Optional[str] = None) -
                 item["severity_tag"] = classify_severity(
                     item.get("headline", ""), exclude_kw, candidate_kw
                 )
+                item["timing_vs_close"] = timing_vs_market_close(
+                    item.get("published_at"), item.get("date")
+                )
         return json.dumps({"news": primary, "pulse_feed": pulse_feed})
     finally:
         db.close()
@@ -402,6 +448,7 @@ def get_settings_json(db_path: Optional[str] = None) -> str:
     try:
         keys = [
             "z_threshold",
+            "min_idio_return",
             "beta_low_threshold",
             "job_hour_ist",
             "require_wifi",

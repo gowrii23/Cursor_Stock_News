@@ -1,5 +1,6 @@
 package com.bseblueprint.screener.ui
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
@@ -9,6 +10,7 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.data.MetricPoint
 import com.bseblueprint.screener.data.NewsItem
+import com.bseblueprint.screener.data.ScoreBreakdown
 import com.bseblueprint.screener.data.WatchlistItem
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
@@ -16,6 +18,7 @@ import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +28,7 @@ import kotlinx.coroutines.withContext
 class StockDetailActivity : AppCompatActivity() {
 
     private val gson = Gson()
+    private var shareText: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,9 +47,21 @@ class StockDetailActivity : AppCompatActivity() {
 
         val txtMeta = findViewById<TextView>(R.id.txtMeta)
         val txtTags = findViewById<TextView>(R.id.txtTags)
+        val txtScoreBreakdown = findViewById<TextView>(R.id.txtScoreBreakdown)
         val txtHistory = findViewById<TextView>(R.id.txtHistory)
         val txtNews = findViewById<TextView>(R.id.txtNews)
         val chart = findViewById<LineChart>(R.id.priceChart)
+        val btnShare = findViewById<MaterialButton>(R.id.btnShare)
+
+        btnShare.setOnClickListener {
+            if (shareText.isBlank()) return@setOnClickListener
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "$ticker flag")
+                putExtra(Intent.EXTRA_TEXT, shareText)
+            }
+            startActivity(Intent.createChooser(intent, getString(R.string.action_share_item)))
+        }
 
         lifecycleScope.launch {
             try {
@@ -57,7 +73,12 @@ class StockDetailActivity : AppCompatActivity() {
 
                 val tagsType = object : TypeToken<List<String>>() {}.type
                 val tags: List<String> = gson.fromJson(detail.getAsJsonArray("blueprint_tags"), tagsType) ?: emptyList()
-                txtTags.text = if (tags.isEmpty()) "No BSE Blueprint tags" else tags.joinToString(" · ")
+                txtTags.text = if (tags.isEmpty()) "No personal theme tags" else tags.joinToString(" · ")
+
+                val breakdownType = object : TypeToken<ScoreBreakdown>() {}.type
+                val breakdown: ScoreBreakdown? =
+                    gson.fromJson(detail.get("score_breakdown"), breakdownType)
+                txtScoreBreakdown.text = formatBreakdown(breakdown)
 
                 val metricsType = object : TypeToken<List<MetricPoint>>() {}.type
                 val metrics: List<MetricPoint> =
@@ -81,20 +102,64 @@ class StockDetailActivity : AppCompatActivity() {
                 txtNews.text = if (news.isEmpty()) {
                     "No matched headlines"
                 } else {
-                    news.take(12).joinToString("\n\n") {
-                        "[${it.severity_tag ?: "?"}] ${it.headline}"
-                    }
+                    news.take(12).joinToString("\n\n") { formatNewsLine(it) }
                 }
 
-                val latest = metrics.lastOrNull()
+                val latest = hist.firstOrNull()
+                val latestMetric = metrics.lastOrNull()
                 supportActionBar?.subtitle = buildString {
-                    append("β ${fmt(latest?.beta_1y)}")
-                    append(" · α ${fmt(latest?.alpha_1y)}")
-                    append(" · ₹${fmt(latest?.close)}")
+                    append("β ${fmt(latest?.beta_1y ?: latestMetric?.beta_1y)}")
+                    append(" · α ${fmt(latest?.alpha_1y ?: latestMetric?.alpha_1y)}")
+                    append(" · ₹${fmt(latestMetric?.close)}")
                 }
+                shareText = buildShareText(ticker, latest, breakdown)
             } catch (t: Throwable) {
                 txtMeta.text = "Failed to load: ${t.message}"
             }
+        }
+    }
+
+    private fun formatBreakdown(breakdown: ScoreBreakdown?): String {
+        if (breakdown == null) return "No score breakdown for latest flag"
+        val c = breakdown.components.orEmpty()
+        val lines = listOf(
+            "Total: ${fmt(breakdown.total)}",
+            "Z-drop: ${fmt(c["z_drop"])}",
+            "Alpha pct: ${fmt(c["alpha_percentile"])}",
+            "Low beta: ${fmt(c["low_beta"])}",
+            "News: ${fmt(c["news_severity"])}",
+            "Themes: ${fmt(c["blueprint"])}"
+        )
+        return lines.joinToString("\n")
+    }
+
+    private fun formatNewsLine(item: NewsItem): String {
+        val timing = when (item.timing_vs_close) {
+            "before_close" -> getString(R.string.timing_before_close)
+            "after_close" -> getString(R.string.timing_after_close)
+            else -> getString(R.string.timing_unknown)
+        }
+        return "[${item.severity_tag ?: "?"} · $timing] ${item.headline}"
+    }
+
+    private fun buildShareText(ticker: String, item: WatchlistItem?, breakdown: ScoreBreakdown?): String {
+        if (item == null) return ticker
+        return buildString {
+            append(ticker)
+            append(" · score ")
+            append(fmt(item.conviction_score))
+            append(" · ")
+            append(item.severity_tag)
+            append("\nToday ")
+            append(item.daily_return?.let { String.format("%+.1f%%", it * 100) } ?: "—")
+            append(" · idio ")
+            append(item.idiosyncratic_return?.let { String.format("%+.1f%%", it * 100) } ?: "—")
+            append(" · z ")
+            append(fmt(item.z_score))
+            append("\n")
+            append(item.headline ?: "—")
+            append("\n\n")
+            append(formatBreakdown(breakdown))
         }
     }
 
@@ -108,7 +173,7 @@ class StockDetailActivity : AppCompatActivity() {
             return
         }
         val set = LineDataSet(entries, "Close").apply {
-            color = Color.parseColor("#0D9488")
+            color = Color.parseColor("#9EB4C8")
             setDrawCircles(false)
             lineWidth = 2f
             setDrawValues(false)
@@ -120,8 +185,8 @@ class StockDetailActivity : AppCompatActivity() {
         chart.axisRight.isEnabled = false
         chart.xAxis.position = XAxis.XAxisPosition.BOTTOM
         chart.xAxis.setDrawLabels(false)
-        chart.axisLeft.textColor = Color.parseColor("#94A3B8")
-        chart.xAxis.textColor = Color.parseColor("#94A3B8")
+        chart.axisLeft.textColor = Color.parseColor("#8B9AAB")
+        chart.xAxis.textColor = Color.parseColor("#8B9AAB")
         chart.setBackgroundColor(Color.TRANSPARENT)
         chart.setTouchEnabled(true)
         chart.animateX(700)

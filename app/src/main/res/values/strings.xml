@@ -14,4 +14,20 @@
     <string name="settings_blueprint_hint">BSE Blueprint theme tags per ticker (JSON)</string>
     <string name="news_pulse_section">Zerodha Pulse</string>
     <string name="demo_ticker_toast">[TEST] is a synthetic mock row — not a real stock</string>
+    <string name="filter_actionable">Actionable</string>
+    <string name="filter_review">Review</string>
+    <string name="filter_blocked">Blocked</string>
+    <string name="filter_empty">No flags in this bucket.</string>
+    <string name="action_share">Share summary</string>
+    <string name="action_share_item">Share flag</string>
+    <string name="settings_min_idio_hint">Min idiosyncratic return (e.g. -0.015 = −1.5%)</string>
+    <string name="timing_before_close">Before close</string>
+    <string name="timing_after_close">After close</string>
+    <string name="timing_unknown">Timing unknown</string>
+    <string name="score_breakdown_title">Score breakdown</string>
+    <string name="health_yahoo">Yahoo</string>
+    <string name="health_pulse">Pulse</string>
+    <string name="health_nse">NSE</string>
+    <string name="health_ok">OK</string>
+    <string name="health_fail">Fail</string>
 </resources>

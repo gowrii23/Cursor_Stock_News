@@ -140,7 +140,12 @@ class NewsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         fun bind(item: NewsItem) {
             title.text = item.headline ?: "—"
             val tickerLabel = item.ticker?.takeIf { it.isNotBlank() } ?: "—"
-            meta.text = listOfNotNull(tickerLabel, item.source, item.date).joinToString(" · ")
+            val timing = when (item.timing_vs_close) {
+                "before_close" -> itemView.context.getString(R.string.timing_before_close)
+                "after_close" -> itemView.context.getString(R.string.timing_after_close)
+                else -> itemView.context.getString(R.string.timing_unknown)
+            }
+            meta.text = listOfNotNull(tickerLabel, item.source, timing, item.date).joinToString(" · ")
             val tag = item.severity_tag ?: "UNKNOWN"
             severity.text = tag
             val color = when (tag) {

@@ -6,7 +6,7 @@ import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.data.WatchlistItem
@@ -15,10 +15,12 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class MainActivity : AppCompatActivity(), HomeFragment.Callback {
 
@@ -86,6 +88,10 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
                 refreshDashboard(runScreen = true)
                 true
             }
+            R.id.action_share -> {
+                shareSummary(homeFragment?.getActionableItems().orEmpty())
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -111,6 +117,10 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
             Intent(this, StockDetailActivity::class.java)
                 .putExtra(StockDetailActivity.EXTRA_TICKER, item.ticker)
         )
+    }
+
+    override fun onWatchlistItemShare(item: WatchlistItem) {
+        shareSummary(listOf(item))
     }
 
     override fun onRefreshRequested() {
@@ -187,19 +197,80 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback {
 
     private fun updateSubtitle(dash: JsonObject, items: List<WatchlistItem>) {
         val run = dash.getAsJsonObject("latest_run")
-        val mode = run?.get("message")?.asString?.let { parseMode(it) } ?: "demo"
+        val health = dash.getAsJsonObject("data_health")
+        val mode = health?.get("mode")?.asString
+            ?: run?.get("message")?.asString?.let { parseMode(it) }
+            ?: "demo"
+        val actionable = items.count { it.severity_tag == "CANDIDATE" }
         val date = items.firstOrNull()?.date ?: "—"
-        val newsLine = if (mode == "live") {
+        val finished = formatIstTime(run?.get("finished_at")?.asString)
+        val modeLabel = if (mode == "live") {
             getString(R.string.subtitle_live_news)
         } else {
             getString(R.string.subtitle_demo_news)
         }
-        subtitle.text = "$newsLine · $date · ${items.size} flags"
+        val yahoo = healthLabel(health?.get("yahoo")?.asString)
+        val pulse = healthLabel(health?.get("pulse")?.asString)
+        val nse = healthLabel(health?.get("nse")?.asString)
+        subtitle.text = "$modeLabel · $finished · $actionable actionable · $date · " +
+            "${getString(R.string.health_yahoo)} $yahoo · " +
+            "${getString(R.string.health_pulse)} $pulse · " +
+            "${getString(R.string.health_nse)} $nse"
+    }
+
+    private fun healthLabel(status: String?): String =
+        if (status == "ok") getString(R.string.health_ok) else getString(R.string.health_fail)
+
+    private fun formatIstTime(iso: String?): String {
+        if (iso.isNullOrBlank()) return "—"
+        return try {
+            val instant = Instant.parse(iso)
+            val fmt = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Kolkata"))
+            fmt.format(instant) + " IST"
+        } catch (_: Exception) {
+            iso.take(16)
+        }
     }
 
     private fun parseMode(message: String): String {
         val token = message.split(" ").firstOrNull { it.startsWith("mode=") } ?: return "demo"
         return token.removePrefix("mode=")
+    }
+
+    private fun shareSummary(items: List<WatchlistItem>) {
+        if (items.isEmpty()) {
+            Toast.makeText(this, R.string.filter_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val body = items.joinToString("\n\n") { formatShareLine(it) }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "BSE Blueprint flags")
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        startActivity(Intent.createChooser(intent, getString(R.string.action_share)))
+    }
+
+    private fun formatShareLine(item: WatchlistItem): String {
+        val daily = item.daily_return?.let { String.format("%+.1f%%", it * 100) } ?: "—"
+        val idio = item.idiosyncratic_return?.let { String.format("%+.1f%%", it * 100) } ?: "—"
+        val z = item.z_score?.let { String.format("%.2f", it) } ?: "—"
+        return buildString {
+            append(item.ticker)
+            append(" · score ")
+            append(String.format("%.0f", item.conviction_score ?: 0.0))
+            append(" · ")
+            append(item.severity_tag ?: "?")
+            append("\n")
+            append("Today ")
+            append(daily)
+            append(" · idio ")
+            append(idio)
+            append(" · z ")
+            append(z)
+            append("\n")
+            append(item.headline ?: "—")
+        }
     }
 
     companion object {

@@ -8,6 +8,10 @@
         app:iconTint="@color/metallic_highlight"
         app:showAsAction="ifRoom" />
     <item
+        android:id="@+id/action_share"
+        android:title="@string/action_share"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_settings"
         android:title="@string/action_settings"
         app:showAsAction="never" />
