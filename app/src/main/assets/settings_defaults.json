@@ -1,0 +1,33 @@
+{
+  "z_threshold": -1.5,
+  "beta_low_threshold": 0.8,
+  "job_hour_ist": 18,
+  "require_wifi": true,
+  "require_charging": false,
+  "exclude_keywords": [
+    "fraud",
+    "sebi ban",
+    "sebi bars",
+    "auditor resign",
+    "forensic audit",
+    "promoter pledge",
+    "insolvency",
+    "default on",
+    "cbi probe",
+    "raid",
+    "license cancel",
+    "going concern"
+  ],
+  "candidate_keywords": [
+    "downgrade",
+    "guidance cut",
+    "misses estimate",
+    "profit booking",
+    "sector selloff",
+    "margin pressure",
+    "one-off",
+    "provisioning",
+    "muted quarter",
+    "brokerage cuts target"
+  ]
+}
