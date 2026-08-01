@@ -27,6 +27,16 @@
         </activity>
 
         <activity
+            android:name=".ui.ScreenerScanActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+
+        <activity
+            android:name=".ui.ScreenerDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+
+        <activity
             android:name=".ui.StockDetailActivity"
             android:exported="false"
             android:parentActivityName=".ui.MainActivity" />

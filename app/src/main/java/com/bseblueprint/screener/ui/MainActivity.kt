@@ -5,11 +5,13 @@ import android.os.Bundle
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.bridge.RunProgressReporter
+import com.bseblueprint.screener.data.ScreenerStock
 import com.bseblueprint.screener.data.WatchlistItem
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -23,14 +25,30 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBottomSheet.Listener {
+class MainActivity : AppCompatActivity(),
+    HomeFragment.Callback,
+    ScreenerFragment.Callback,
+    RunProgressBottomSheet.Listener {
 
     private lateinit var subtitle: TextView
     private lateinit var bottomNav: BottomNavigationView
     private val gson = Gson()
     private var homeFragment: HomeFragment? = null
     private var newsFragment: NewsFragment? = null
+    private var screenerFragment: ScreenerFragment? = null
     private var runSheet: RunProgressBottomSheet? = null
+    private var pendingRowsJson: String? = null
+
+    private val screenerScanLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val json = result.data?.getStringExtra(ScreenerScanActivity.EXTRA_ROWS_JSON)
+            if (!json.isNullOrBlank()) {
+                processScreenerRows(json)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +64,11 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
         if (savedInstanceState == null) {
             homeFragment = HomeFragment()
             newsFragment = NewsFragment()
-            supportFragmentManager.beginTransaction()
+            screenerFragment = ScreenerFragment()
+            val fm = supportFragmentManager
+            fm.beginTransaction()
+                .add(R.id.fragmentContainer, screenerFragment!!, TAG_SCREENER)
+                .hide(screenerFragment!!)
                 .add(R.id.fragmentContainer, newsFragment!!, TAG_NEWS)
                 .hide(newsFragment!!)
                 .add(R.id.fragmentContainer, homeFragment!!, TAG_HOME)
@@ -54,19 +76,29 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
         } else {
             homeFragment = supportFragmentManager.findFragmentByTag(TAG_HOME) as? HomeFragment
             newsFragment = supportFragmentManager.findFragmentByTag(TAG_NEWS) as? NewsFragment
+            screenerFragment = supportFragmentManager.findFragmentByTag(TAG_SCREENER) as? ScreenerFragment
         }
 
         bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_home -> {
-                    showFragment(TAG_HOME)
+                    showTab(TAG_HOME)
                     supportActionBar?.title = getString(R.string.tab_home)
+                    subtitle.visibility = View.VISIBLE
                     true
                 }
                 R.id.nav_news -> {
-                    showFragment(TAG_NEWS)
+                    showTab(TAG_NEWS)
                     supportActionBar?.title = getString(R.string.tab_news)
+                    subtitle.visibility = View.VISIBLE
                     newsFragment?.loadNews()
+                    true
+                }
+                R.id.nav_screener -> {
+                    showTab(TAG_SCREENER)
+                    supportActionBar?.title = getString(R.string.tab_screener)
+                    subtitle.visibility = View.GONE
+                    screenerFragment?.let { onScreenerLoad() }
                     true
                 }
                 else -> false
@@ -80,6 +112,13 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
         return true
     }
 
+    override fun onPrepareOptionsMenu(menu: android.view.Menu): Boolean {
+        val onScreener = bottomNav.selectedItemId == R.id.nav_screener
+        menu.findItem(R.id.action_share)?.isVisible = !onScreener
+        menu.findItem(R.id.action_run)?.title = getString(R.string.action_run_screen)
+        return super.onPrepareOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_settings -> {
@@ -87,7 +126,11 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
                 true
             }
             R.id.action_run -> {
-                startRunWithProgress()
+                if (bottomNav.selectedItemId == R.id.nav_screener) {
+                    startScreenerScan()
+                } else {
+                    startRunWithProgress()
+                }
                 true
             }
             R.id.action_share -> {
@@ -98,18 +141,21 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
         }
     }
 
-    private fun showFragment(tag: String) {
+    private fun showTab(tag: String) {
         val home = homeFragment ?: return
         val news = newsFragment ?: return
+        val screener = screenerFragment ?: return
         val tx = supportFragmentManager.beginTransaction()
-        if (tag == TAG_HOME) {
-            tx.show(home).hide(news)
-        } else {
-            tx.show(news).hide(home)
+        tx.hide(home).hide(news).hide(screener)
+        when (tag) {
+            TAG_HOME -> tx.show(home)
+            TAG_NEWS -> tx.show(news)
+            TAG_SCREENER -> tx.show(screener)
         }
         tx.commit()
     }
 
+    // --- Home callbacks ---
     override fun onWatchlistItemClick(item: WatchlistItem) {
         if (item.ticker == "[TEST]") {
             Toast.makeText(this, R.string.demo_ticker_toast, Toast.LENGTH_SHORT).show()
@@ -125,18 +171,93 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
         shareSummary(listOf(item))
     }
 
-    override fun onRefreshRequested() {
-        startRunWithProgress()
+    override fun onRefreshRequested() = startRunWithProgress()
+
+    override fun onLoadDashboard(seedIfEmpty: Boolean) = loadDashboard(seedIfEmpty)
+
+    // --- Screener callbacks ---
+    override fun onScreenerRunScan() = startScreenerScan()
+
+    override fun onScreenerStockClick(stock: ScreenerStock) {
+        startActivity(
+            Intent(this, ScreenerDetailActivity::class.java)
+                .putExtra(ScreenerDetailActivity.EXTRA_SYMBOL, stock.symbol)
+        )
     }
+
+    override fun onScreenerLoad() = loadScreener()
 
     override fun onRunDismissed() {
         runSheet = null
-        loadDashboard(seedIfEmpty = false)
-        newsFragment?.loadNews()
+        if (pendingRowsJson != null) {
+            pendingRowsJson = null
+            loadScreener()
+        } else {
+            loadDashboard(seedIfEmpty = false)
+            newsFragment?.loadNews()
+        }
     }
 
-    override fun onLoadDashboard(seedIfEmpty: Boolean) {
-        loadDashboard(seedIfEmpty)
+    private fun startScreenerScan() {
+        screenerScanLauncher.launch(Intent(this, ScreenerScanActivity::class.java))
+    }
+
+    private fun processScreenerRows(rowsJson: String) {
+        val sheet = RunProgressBottomSheet.newInstance(getString(R.string.screener_progress_title)).also {
+            it.listener = this
+            runSheet = it
+        }
+        sheet.show(supportFragmentManager, RunProgressBottomSheet.TAG)
+
+        lifecycleScope.launch {
+            try {
+                val reporter = RunProgressReporter { percent, message ->
+                    runSheet?.updateProgress(percent, message)
+                }
+                val result = withContext(Dispatchers.IO) {
+                    PythonBridge.processScreenerCapture(rowsJson, reporter)
+                }
+                val status = result.get("status")?.asString ?: "error"
+                val high = result.get("high_count")?.asInt ?: 0
+                val watch = result.get("watch_count")?.asInt ?: 0
+                val success = status == "ok"
+                runSheet?.markComplete(
+                    success,
+                    "Scan done — $high high conviction, $watch watchlist"
+                )
+            } catch (t: Throwable) {
+                runSheet?.markComplete(false, "Scan failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun loadScreener() {
+        screenerFragment?.setLoading(true)
+        lifecycleScope.launch {
+            try {
+                val dash = withContext(Dispatchers.IO) { PythonBridge.getScreenerDashboard() }
+                val scan = dash.getAsJsonObject("scan")
+                val arr = dash.getAsJsonArray("stocks")
+                val type = object : TypeToken<List<ScreenerStock>>() {}.type
+                val items: List<ScreenerStock> = gson.fromJson(arr, type) ?: emptyList()
+                val meta = buildString {
+                    if (scan != null) {
+                        append("${scan.get("passed_l1")?.asInt ?: 0} passed L1")
+                        append(" · ${scan.get("high_count")?.asInt ?: 0} high")
+                        append(" · ${scan.get("watch_count")?.asInt ?: 0} watch")
+                        val at = scan.get("scanned_at")?.asString
+                        if (!at.isNullOrBlank()) append(" · ${formatIstTime(at)}")
+                    } else {
+                        append(getString(R.string.screener_empty))
+                    }
+                }
+                screenerFragment?.bindData(items, meta)
+            } catch (t: Throwable) {
+                Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                screenerFragment?.setLoading(false)
+            }
+        }
     }
 
     private fun loadDashboard(seedIfEmpty: Boolean) {
@@ -160,7 +281,6 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
                 }
                 homeFragment?.bindItems(items)
             } catch (t: Throwable) {
-                t.printStackTrace()
                 Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
                 homeFragment?.showEmpty()
             } finally {
@@ -173,8 +293,9 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
     private fun startRunWithProgress() {
         if (bottomNav.selectedItemId != R.id.nav_home) {
             bottomNav.selectedItemId = R.id.nav_home
-            showFragment(TAG_HOME)
+            showTab(TAG_HOME)
             supportActionBar?.title = getString(R.string.tab_home)
+            subtitle.visibility = View.VISIBLE
         }
 
         val sheet = RunProgressBottomSheet.newInstance().also {
@@ -189,33 +310,17 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
                     runSheet?.updateProgress(percent, message)
                 }
                 val result = withContext(Dispatchers.IO) {
-                    PythonBridge.runDailyScreen(
-                        useLive = true,
-                        forceDemo = false,
-                        reporter = reporter
-                    )
+                    PythonBridge.runDailyScreen(useLive = true, forceDemo = false, reporter = reporter)
                 }
                 val mode = result.get("mode")?.asString ?: "?"
                 val flagged = result.get("flagged_count")?.asInt ?: 0
                 val status = result.get("status")?.asString ?: "error"
                 val success = status == "ok" || status == "partial"
-                val summary = "Finished ($mode): $flagged flag(s)"
-                runSheet?.markComplete(success, summary)
-                subtitle.text = summary
+                runSheet?.markComplete(success, "Finished ($mode): $flagged flag(s)")
             } catch (t: Throwable) {
-                t.printStackTrace()
                 runSheet?.markComplete(false, "Run failed: ${t.message}")
-                Toast.makeText(this@MainActivity, "Run failed: ${t.message}", Toast.LENGTH_LONG).show()
             }
         }
-    }
-
-    private fun refreshDashboard(runScreen: Boolean) {
-        if (runScreen) {
-            startRunWithProgress()
-            return
-        }
-        loadDashboard(seedIfEmpty = false)
     }
 
     private fun updateSubtitle(dash: JsonObject, items: List<WatchlistItem>) {
@@ -276,7 +381,7 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
         val body = items.joinToString("\n\n") { formatShareLine(it) }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "BSE Blueprint flags")
+            putExtra(Intent.EXTRA_SUBJECT, "Gowri Screener flags")
             putExtra(Intent.EXTRA_TEXT, body)
         }
         startActivity(Intent.createChooser(intent, getString(R.string.action_share)))
@@ -292,8 +397,7 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
             append(String.format("%.0f", item.conviction_score ?: 0.0))
             append(" · ")
             append(item.severity_tag ?: "?")
-            append("\n")
-            append("Today ")
+            append("\nToday ")
             append(daily)
             append(" · idio ")
             append(idio)
@@ -307,5 +411,6 @@ class MainActivity : AppCompatActivity(), HomeFragment.Callback, RunProgressBott
     companion object {
         private const val TAG_HOME = "home"
         private const val TAG_NEWS = "news"
+        private const val TAG_SCREENER = "screener"
     }
 }

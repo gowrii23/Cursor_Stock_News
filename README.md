@@ -1,34 +1,25 @@
-# BSE Blueprint Screener
+# Gowri Screener
 
-Personal Android APK: EOD news-driven overreaction screener for Nifty 50 + Next 50.
+Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental screener (Screener tab).
 
-**Not an auto-trade signal.** Ranked, tagged dashboard only. Personal use.
+**Not an auto-trade signal.** Ranked dashboards only. Personal use.
 
-## What it does
+## Tabs
 
-Flags stocks where:
-
-1. Price fell idiosyncratically vs beta-implied index move (`z < -1.5` by default)
-2. Matching news exists (NSE bhavcopy prices + Pulse / NSE announcements / Google News for flags)
-3. Severity keyword filter tags `CANDIDATE` / `EXCLUDE` / `UNKNOWN`
-4. Optional BSE Blueprint theme tags apply
-5. Composite conviction score ranks the watchlist
-
-## Stack
-
-- Kotlin UI (Dashboard, Stock Detail + MPAndroidChart, News Feed, Settings)
-- Python logic via [Chaquopy](https://chaquo.com/chaquopy/) (`pandas`, `numpy`, NSE bhavcopy CSV, Pulse/NSE/Google News RSS)
-- WorkManager daily job (Wi‑Fi / charging constraints configurable)
-- On-device SQLite history
+| Tab | Purpose |
+|-----|---------|
+| **Home** | Idiosyncratic drop + news severity (Nifty 100) |
+| **News** | Cached headlines |
+| **Screener** | screener.in capture → Layer 1/2/3 pre-rating funnel (~613 stocks) |
 
 ## Download (latest debug APK)
 
-**[Download APK v1.2.0](releases/bse-blueprint-screener-1.2.0-debug.apk)** — Run progress modal with live log feed + Tier A data layer.
+**[Download APK v1.3.0](releases/bse-blueprint-screener-1.3.0-debug.apk)** — Gowri Screener + Screener tab (screener.in WebView capture, L1/L2/L3).
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.2.0-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.3.0-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.
@@ -52,13 +43,15 @@ Install:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## First launch
+## Screener tab (first run)
 
-- Seeds a **demo** watchlist offline so UI works immediately
-- Tap **Run** in the toolbar to open the progress modal (live log + progress bar)
-- First run backfills ~280 trading days on Wi‑Fi (~3–8 min); progress is shown in the modal
-- Live news: Zerodha Pulse + NSE announcements + Google News for flagged stocks only
-- Tune keywords, z-threshold, and Blueprint JSON in **Settings**
+1. Open **Screener** tab → **Run Scan** (or toolbar **Run**)
+2. Log in to screener.in inside the WebView if prompted (once)
+3. Tap **Start Capture** — paginates through ~25 pages (~3–5 min)
+4. Progress modal runs Layer 1 filters, Layer 2 scoring, Layer 3 technical overlay on shortlist
+5. Review **80+ High** / **60–79 Watch** tiers; tap a stock for score breakdown + manual verification checklist
+
+## Home tab (first run)
 
 ## Project layout
 

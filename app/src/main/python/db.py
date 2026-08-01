@@ -115,6 +115,34 @@ class Database:
               date TEXT PRIMARY KEY,
               close REAL
             );
+
+            CREATE TABLE IF NOT EXISTS screener_scan (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scanned_at TEXT,
+              source_url TEXT,
+              total_raw INTEGER,
+              passed_l1 INTEGER,
+              high_count INTEGER,
+              watch_count INTEGER,
+              message TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS screener_stock (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scan_id INTEGER,
+              symbol TEXT,
+              name TEXT,
+              cmp REAL,
+              score_total REAL,
+              tier TEXT,
+              l1_passed INTEGER,
+              l1_fails TEXT,
+              score_breakdown TEXT,
+              layer3 TEXT,
+              manual_notes TEXT,
+              raw_columns TEXT,
+              user_verified INTEGER DEFAULT 0
+            );
             """
         )
         self.conn.commit()
@@ -419,6 +447,132 @@ class Database:
             (limit,),
         ).fetchall()
         return [dict(r) for r in reversed(rows)]
+
+    def save_screener_scan(
+        self,
+        meta: Dict[str, Any],
+        stocks: List[Dict[str, Any]],
+    ) -> int:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO screener_scan(
+              scanned_at, source_url, total_raw, passed_l1, high_count, watch_count, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                meta.get("scanned_at"),
+                meta.get("source_url"),
+                meta.get("total_raw"),
+                meta.get("passed_l1"),
+                meta.get("high_count"),
+                meta.get("watch_count"),
+                meta.get("message"),
+            ),
+        )
+        scan_id = cur.lastrowid
+        for s in stocks:
+            cur.execute(
+                """
+                INSERT INTO screener_stock(
+                  scan_id, symbol, name, cmp, score_total, tier, l1_passed,
+                  l1_fails, score_breakdown, layer3, manual_notes, raw_columns
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scan_id,
+                    s.get("symbol"),
+                    s.get("name"),
+                    s.get("cmp"),
+                    s.get("score_total"),
+                    s.get("tier"),
+                    1 if s.get("l1_passed") else 0,
+                    json.dumps(s.get("l1_fails") or []),
+                    json.dumps(s.get("score_breakdown") or {}),
+                    json.dumps(s.get("layer3") or {}),
+                    json.dumps(s.get("manual_notes") or []),
+                    json.dumps(s.get("raw") or {}),
+                ),
+            )
+        self.conn.commit()
+        return int(scan_id)
+
+    def latest_screener_scan(self) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        row = cur.execute(
+            "SELECT * FROM screener_scan ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_screener_stocks(
+        self,
+        scan_id: Optional[int] = None,
+        tier: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        if scan_id is None:
+            latest = self.latest_screener_scan()
+            if not latest:
+                return []
+            scan_id = latest["id"]
+        sql = """
+            SELECT * FROM screener_stock
+            WHERE scan_id = ? AND l1_passed = 1
+        """
+        params: List[Any] = [scan_id]
+        if tier and tier != "all":
+            sql += " AND tier = ?"
+            params.append(tier)
+        sql += " ORDER BY score_total DESC"
+        rows = cur.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for key in ("l1_fails", "score_breakdown", "layer3", "manual_notes", "raw_columns"):
+                try:
+                    d[key] = json.loads(d.get(key) or "null")
+                except Exception:
+                    d[key] = None
+            out.append(d)
+        return out
+
+    def get_screener_stock(self, symbol: str, scan_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        if scan_id is None:
+            latest = self.latest_screener_scan()
+            if not latest:
+                return None
+            scan_id = latest["id"]
+        row = cur.execute(
+            """
+            SELECT * FROM screener_stock
+            WHERE scan_id = ? AND symbol = ?
+            """,
+            (scan_id, symbol.upper()),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for key in ("l1_fails", "score_breakdown", "layer3", "manual_notes", "raw_columns"):
+            try:
+                d[key] = json.loads(d.get(key) or "null")
+            except Exception:
+                d[key] = None
+        return d
+
+    def set_screener_verified(self, symbol: str, verified: bool) -> None:
+        cur = self.conn.cursor()
+        latest = self.latest_screener_scan()
+        if not latest:
+            return
+        cur.execute(
+            """
+            UPDATE screener_stock SET user_verified = ?
+            WHERE scan_id = ? AND symbol = ?
+            """,
+            (1 if verified else 0, latest["id"], symbol.upper()),
+        )
+        self.conn.commit()
 
     def set_setting(self, key: str, value: Any) -> None:
         cur = self.conn.cursor()

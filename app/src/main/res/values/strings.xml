@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BSE Blueprint</string>
+    <string name="app_name">Gowri Screener</string>
     <string name="tab_home">Home</string>
     <string name="tab_news">News</string>
+    <string name="tab_screener">Screener</string>
     <string name="action_run_screen">Run</string>
     <string name="action_settings">Settings</string>
     <string name="watchlist_empty">No flags yet.\nTap Run in the toolbar to start the EOD screen.</string>
@@ -40,4 +41,22 @@
     <string name="run_progress_percent">%1$d%%</string>
     <string name="run_progress_done">Done</string>
     <string name="run_progress_close">Close</string>
+    <string name="screener_run_scan">Run Scan</string>
+    <string name="screener_empty">No scan yet.\nTap Run Scan to capture from screener.in.</string>
+    <string name="screener_tier_high">80+ High</string>
+    <string name="screener_tier_watch">60–79 Watch</string>
+    <string name="screener_tier_all">All L1 pass</string>
+    <string name="screener_scan_title">screener.in capture</string>
+    <string name="screener_scan_login_hint">Log in to screener.in if prompted, then tap Start Capture.</string>
+    <string name="screener_scan_start">Start Capture</string>
+    <string name="screener_scan_starting">Capturing pages…</string>
+    <string name="screener_scan_page">Loading page %1$d of %2$d…</string>
+    <string name="screener_scan_rows">Page %1$d/%2$d · %3$d rows collected</string>
+    <string name="screener_scan_complete">Captured %1$d rows — processing…</string>
+    <string name="screener_progress_title">Running screener scan</string>
+    <string name="screener_layer3_title">Layer 3 — Technical overlay</string>
+    <string name="screener_layer3_none">No technical signals (or insufficient price history)</string>
+    <string name="screener_manual_title">Notes — verify manually</string>
+    <string name="screener_manual_verified">I verified manual checks for this stock</string>
+    <string name="screener_raw_columns">Raw screener.in columns</string>
 </resources>
