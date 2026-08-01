@@ -15,6 +15,30 @@ data class ScreenerStock(
     val user_verified: Int? = null
 )
 
+data class ScreenerTopReview(
+    val symbol: String = "",
+    val name: String? = null,
+    val cmp: Double? = null,
+    val score_total: Double? = null,
+    val tier: String? = null,
+    val l1_passed: Boolean? = null,
+    val review_badge: String? = null
+)
+
+data class ScreenerTierCounts(
+    val high: Int = 0,
+    val watch: Int = 0,
+    val low: Int = 0,
+    val all: Int = 0
+)
+
+data class ScreenerUiState(
+    val stocks: List<ScreenerStock> = emptyList(),
+    val topReview: List<ScreenerTopReview> = emptyList(),
+    val counts: ScreenerTierCounts = ScreenerTierCounts(),
+    val metaLine: String = ""
+)
+
 data class Layer3Result(
     val status: String? = null,
     val signals: List<String>? = null,
@@ -33,5 +57,5 @@ data class ScreenerScanMeta(
 )
 
 enum class ScreenerTierFilter {
-    HIGH, WATCH, ALL
+    HIGH, WATCH, LOW, ALL
 }

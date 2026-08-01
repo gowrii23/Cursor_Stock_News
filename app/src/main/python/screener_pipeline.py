@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from db import Database
 from nse_fetch import fetch_ohlc_nse
 from progress_report import report
-from screener_engine import process_rows
+from screener_engine import pick_top_review, process_rows
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ def process_screener_capture(
         report(progress_cb, 85, "Running Layer 2 scoring + Layer 3 technical overlay…")
         result = process_rows(rows, run_layer3=True, db=db)
 
+        top_review = pick_top_review(result.get("all_rows") or result["stocks"])
         meta = {
             "scanned_at": started,
             "source_url": source_url,
@@ -68,9 +69,12 @@ def process_screener_capture(
             "passed_l1": result["passed_l1"],
             "high_count": result["high_conviction"],
             "watch_count": result["watchlist"],
+            "low_count": result["low_conviction"],
+            "top_review": top_review,
             "message": (
                 f"raw={result['total_raw']} l1={result['passed_l1']} "
-                f"high={result['high_conviction']} watch={result['watchlist']}"
+                f"high={result['high_conviction']} watch={result['watchlist']} "
+                f"low={result['low_conviction']}"
             ),
         }
         db.save_screener_scan(meta, result["stocks"])
@@ -78,7 +82,11 @@ def process_screener_capture(
         report(
             progress_cb,
             100,
-            f"Done — {result['high_conviction']} high conviction, {result['watchlist']} watchlist",
+            (
+                f"Done — {result['high_conviction']} high (80+) · "
+                f"{result['watchlist']} watch · {result['low_conviction']} low · "
+                f"{result['passed_l1']} L1 pass"
+            ),
         )
         return json.dumps(
             {
@@ -86,8 +94,10 @@ def process_screener_capture(
                 "scan": meta,
                 "high_count": result["high_conviction"],
                 "watch_count": result["watchlist"],
+                "low_count": result["low_conviction"],
                 "passed_l1": result["passed_l1"],
                 "total_raw": result["total_raw"],
+                "top_review": top_review,
             }
         )
     except Exception as e:
@@ -97,12 +107,46 @@ def process_screener_capture(
         db.close()
 
 
+_LIST_FIELDS = (
+    "symbol",
+    "name",
+    "cmp",
+    "score_total",
+    "tier",
+    "l1_passed",
+    "layer3",
+    "user_verified",
+)
+
+
+def _slim_stock(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: row[k] for k in _LIST_FIELDS if k in row}
+
+
 def get_screener_dashboard_json(db_path: Optional[str] = None) -> str:
     db = Database(db_path)
     try:
         scan = db.latest_screener_scan()
-        stocks = db.get_screener_stocks() if scan else []
-        return json.dumps({"scan": scan, "stocks": stocks}, default=str)
+        stocks = [_slim_stock(s) for s in db.get_screener_stocks()] if scan else []
+        top_review = []
+        counts = {"high": 0, "watch": 0, "low": 0, "all": 0}
+        if scan:
+            top_review = scan.get("top_review") or []
+            if isinstance(top_review, str):
+                try:
+                    top_review = json.loads(top_review)
+                except Exception:
+                    top_review = []
+            counts = {
+                "high": scan.get("high_count") or 0,
+                "watch": scan.get("watch_count") or 0,
+                "low": scan.get("low_count") or 0,
+                "all": scan.get("passed_l1") or len(stocks),
+            }
+        return json.dumps(
+            {"scan": scan, "stocks": stocks, "top_review": top_review, "counts": counts},
+            default=str,
+        )
     finally:
         db.close()
 

@@ -309,12 +309,51 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
             row["layer3"] = {"status": "skip", "signals": [], "score": 0}
 
     passed_l1.sort(key=lambda r: r.get("score_total") or 0, reverse=True)
+    low_count = len([r for r in passed_l1 if r.get("tier") == "low"])
     return {
         "total_raw": len(normalized),
         "passed_l1": len(passed_l1),
         "failed_l1": len(failed_l1),
         "high_conviction": len([r for r in passed_l1 if r.get("tier") == "high"]),
         "watchlist": len([r for r in passed_l1 if r.get("tier") == "watch"]),
+        "low_conviction": low_count,
         "stocks": passed_l1,
         "rejected": failed_l1[:50],
+        "all_rows": passed_l1 + failed_l1,
     }
+
+
+def pick_top_review(rows: List[Dict[str, Any]], limit: int = 3) -> List[Dict[str, Any]]:
+    """Best names from the full captured pool for pinned manual review."""
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        sym = (row.get("symbol") or "").strip().upper()
+        if not sym:
+            continue
+        score = float(row.get("score_total") or 0)
+        l1_ok = bool(row.get("l1_passed"))
+        tier = row.get("tier") or ("rejected" if not l1_ok else "low")
+        candidates.append(
+            {
+                "symbol": sym,
+                "name": row.get("name") or sym,
+                "cmp": row.get("cmp"),
+                "score_total": score,
+                "tier": tier,
+                "l1_passed": l1_ok,
+            }
+        )
+    candidates.sort(key=lambda r: (r["score_total"], r["symbol"]), reverse=True)
+    top = candidates[:limit]
+    for item in top:
+        if not item["l1_passed"]:
+            item["review_badge"] = "L1 not passed — review manually"
+        elif item["score_total"] < 60:
+            item["review_badge"] = "Below 60 — review manually"
+        elif item["tier"] == "high":
+            item["review_badge"] = "80+ High conviction"
+        elif item["tier"] == "watch":
+            item["review_badge"] = "60–79 Watchlist"
+        else:
+            item["review_badge"] = "Below 60 — review manually"
+    return top

@@ -17,38 +17,82 @@
         android:textColor="@color/text_secondary"
         android:textSize="13sp" />
 
-    <com.google.android.material.chip.ChipGroup
-        android:id="@+id/tierChips"
+    <LinearLayout
+        android:id="@+id/topReviewSection"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="12dp"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
         android:paddingTop="8dp"
-        android:paddingEnd="12dp"
-        app:singleSelection="true"
-        app:selectionRequired="true">
+        android:paddingEnd="16dp"
+        android:visibility="gone">
 
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipHigh"
-            style="@style/Widget.Material3.Chip.Filter"
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/screener_top_review_title"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <include
+            android:id="@+id/topPick1"
+            layout="@layout/item_screener_top_pick" />
+
+        <include
+            android:id="@+id/topPick2"
+            layout="@layout/item_screener_top_pick" />
+
+        <include
+            android:id="@+id/topPick3"
+            layout="@layout/item_screener_top_pick" />
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/tierChips"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="@string/screener_tier_high" />
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            app:singleSelection="true"
+            app:selectionRequired="true">
 
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipWatch"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/screener_tier_watch" />
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipAll"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/screener_tier_all" />
 
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipAll"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/screener_tier_all" />
-    </com.google.android.material.chip.ChipGroup>
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipHigh"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/screener_tier_high" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipWatch"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/screener_tier_watch" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipLow"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/screener_tier_low" />
+        </com.google.android.material.chip.ChipGroup>
+    </HorizontalScrollView>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnRunScan"
@@ -78,7 +122,7 @@
             android:layout_gravity="center"
             android:gravity="center"
             android:padding="24dp"
-            android:text="@string/screener_empty"
+            android:text="@string/screener_list_empty"
             android:textColor="@color/text_secondary"
             android:visibility="gone" />
 

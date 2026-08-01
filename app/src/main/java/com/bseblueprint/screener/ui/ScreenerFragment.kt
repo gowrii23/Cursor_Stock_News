@@ -12,7 +12,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.data.ScreenerStock
+import com.bseblueprint.screener.data.ScreenerTierCounts
 import com.bseblueprint.screener.data.ScreenerTierFilter
+import com.bseblueprint.screener.data.ScreenerTopReview
+import com.bseblueprint.screener.data.ScreenerUiState
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
@@ -31,8 +34,15 @@ class ScreenerFragment : Fragment() {
     private lateinit var subtitle: TextView
     private lateinit var progress: ProgressBar
     private lateinit var adapter: ScreenerAdapter
+    private lateinit var topReviewSection: View
+    private lateinit var chipAll: Chip
+    private lateinit var chipHigh: Chip
+    private lateinit var chipWatch: Chip
+    private lateinit var chipLow: Chip
+    private val topPickViews = mutableListOf<View>()
     private var allItems: List<ScreenerStock> = emptyList()
-    private var currentFilter = ScreenerTierFilter.HIGH
+    private var topReview: List<ScreenerTopReview> = emptyList()
+    private var currentFilter = ScreenerTierFilter.ALL
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
@@ -51,7 +61,15 @@ class ScreenerFragment : Fragment() {
         emptyView = view.findViewById(R.id.screenerEmpty)
         subtitle = view.findViewById(R.id.screenerSubtitle)
         progress = view.findViewById(R.id.screenerProgress)
+        topReviewSection = view.findViewById(R.id.topReviewSection)
         val tierChips = view.findViewById<ChipGroup>(R.id.tierChips)
+        chipAll = view.findViewById(R.id.chipAll)
+        chipHigh = view.findViewById(R.id.chipHigh)
+        chipWatch = view.findViewById(R.id.chipWatch)
+        chipLow = view.findViewById(R.id.chipLow)
+        topPickViews.add(view.findViewById(R.id.topPick1))
+        topPickViews.add(view.findViewById(R.id.topPick2))
+        topPickViews.add(view.findViewById(R.id.topPick3))
 
         adapter = ScreenerAdapter { stock -> callback?.onScreenerStockClick(stock) }
         recycler.layoutManager = LinearLayoutManager(requireContext())
@@ -63,23 +81,66 @@ class ScreenerFragment : Fragment() {
 
         tierChips.setOnCheckedStateChangeListener { _, checkedIds ->
             currentFilter = when (checkedIds.firstOrNull()) {
+                R.id.chipHigh -> ScreenerTierFilter.HIGH
                 R.id.chipWatch -> ScreenerTierFilter.WATCH
-                R.id.chipAll -> ScreenerTierFilter.ALL
-                else -> ScreenerTierFilter.HIGH
+                R.id.chipLow -> ScreenerTierFilter.LOW
+                else -> ScreenerTierFilter.ALL
             }
             applyFilter()
         }
-        view.findViewById<Chip>(R.id.chipHigh).isChecked = true
 
         if (savedInstanceState == null) {
             callback?.onScreenerLoad()
         }
     }
 
-    fun bindData(items: List<ScreenerStock>, metaLine: String) {
-        allItems = items
-        subtitle.text = metaLine
+    fun bindState(state: ScreenerUiState) {
+        allItems = state.stocks
+        topReview = state.topReview
+        subtitle.text = state.metaLine
+        updateChipCounts(state.counts)
+        bindTopReview(state.topReview)
         applyFilter()
+    }
+
+    private fun updateChipCounts(counts: ScreenerTierCounts) {
+        chipAll.text = getString(R.string.screener_tier_all_count, counts.all)
+        chipHigh.text = getString(R.string.screener_tier_high_count, counts.high)
+        chipWatch.text = getString(R.string.screener_tier_watch_count, counts.watch)
+        chipLow.text = getString(R.string.screener_tier_low_count, counts.low)
+    }
+
+    private fun bindTopReview(items: List<ScreenerTopReview>) {
+        if (items.isEmpty()) {
+            topReviewSection.visibility = View.GONE
+            return
+        }
+        topReviewSection.visibility = View.VISIBLE
+        topPickViews.forEachIndexed { index, pickView ->
+            val item = items.getOrNull(index)
+            if (item == null) {
+                pickView.visibility = View.GONE
+                return@forEachIndexed
+            }
+            pickView.visibility = View.VISIBLE
+            pickView.findViewById<TextView>(R.id.topSymbol).text =
+                "${item.symbol} · ${String.format("%.0f", item.score_total ?: 0.0)}"
+            pickView.findViewById<TextView>(R.id.topBadge).text =
+                item.review_badge ?: item.name ?: item.symbol
+            pickView.findViewById<TextView>(R.id.topScore).text =
+                item.cmp?.let { "₹%.0f".format(it) } ?: "—"
+            pickView.setOnClickListener {
+                callback?.onScreenerStockClick(
+                    ScreenerStock(
+                        symbol = item.symbol,
+                        name = item.name,
+                        cmp = item.cmp,
+                        score_total = item.score_total,
+                        tier = item.tier
+                    )
+                )
+            }
+        }
     }
 
     private fun applyFilter() {
@@ -87,13 +148,23 @@ class ScreenerFragment : Fragment() {
             when (currentFilter) {
                 ScreenerTierFilter.HIGH -> item.tier == "high"
                 ScreenerTierFilter.WATCH -> item.tier == "watch"
+                ScreenerTierFilter.LOW -> item.tier == "low"
                 ScreenerTierFilter.ALL -> true
             }
         }
         adapter.submit(filtered)
+        val hasScan = allItems.isNotEmpty() || topReview.isNotEmpty()
         val empty = filtered.isEmpty()
-        emptyView.visibility = if (empty) View.VISIBLE else View.GONE
+        emptyView.visibility = if (empty && hasScan) View.VISIBLE else View.GONE
         recycler.visibility = if (empty) View.GONE else View.VISIBLE
+        if (empty && hasScan) {
+            emptyView.text = when (currentFilter) {
+                ScreenerTierFilter.HIGH -> getString(R.string.screener_filter_empty_high)
+                ScreenerTierFilter.WATCH -> getString(R.string.screener_filter_empty_watch)
+                ScreenerTierFilter.LOW -> getString(R.string.screener_filter_empty_low)
+                ScreenerTierFilter.ALL -> getString(R.string.screener_list_empty)
+            }
+        }
     }
 
     fun setLoading(loading: Boolean) {

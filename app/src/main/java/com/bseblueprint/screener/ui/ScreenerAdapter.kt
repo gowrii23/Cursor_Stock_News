@@ -49,6 +49,7 @@ class ScreenerAdapter(
             tierChip.text = when (tier) {
                 "high" -> "80+"
                 "watch" -> "60–79"
+                "low" -> "<60"
                 else -> tier
             }
             val l3s = item.layer3?.signals?.size ?: 0

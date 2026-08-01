@@ -12,6 +12,7 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.bridge.RunProgressReporter
 import com.bseblueprint.screener.data.ScreenerStock
+import com.bseblueprint.screener.data.ScreenerUiState
 import com.bseblueprint.screener.data.WatchlistItem
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -37,7 +38,7 @@ class MainActivity : AppCompatActivity(),
     private var newsFragment: NewsFragment? = null
     private var screenerFragment: ScreenerFragment? = null
     private var runSheet: RunProgressBottomSheet? = null
-    private var pendingRowsJson: String? = null
+    private var screenerRunActive = false
 
     private val screenerScanLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -189,8 +190,8 @@ class MainActivity : AppCompatActivity(),
 
     override fun onRunDismissed() {
         runSheet = null
-        if (pendingRowsJson != null) {
-            pendingRowsJson = null
+        if (bottomNav.selectedItemId == R.id.nav_screener || screenerRunActive) {
+            screenerRunActive = false
             loadScreener()
         } else {
             loadDashboard(seedIfEmpty = false)
@@ -203,6 +204,7 @@ class MainActivity : AppCompatActivity(),
     }
 
     private fun processScreenerRows(rowsJson: String) {
+        screenerRunActive = true
         val sheet = RunProgressBottomSheet.newInstance(getString(R.string.screener_progress_title)).also {
             it.listener = this
             runSheet = it
@@ -220,11 +222,16 @@ class MainActivity : AppCompatActivity(),
                 val status = result.get("status")?.asString ?: "error"
                 val high = result.get("high_count")?.asInt ?: 0
                 val watch = result.get("watch_count")?.asInt ?: 0
+                val low = result.get("low_count")?.asInt ?: 0
+                val l1 = result.get("passed_l1")?.asInt ?: 0
                 val success = status == "ok"
                 runSheet?.markComplete(
                     success,
-                    "Scan done — $high high conviction, $watch watchlist"
+                    "Scan done — $high high (80+) · $watch watch · $low low · $l1 L1 pass"
                 )
+                if (success) {
+                    loadScreener()
+                }
             } catch (t: Throwable) {
                 runSheet?.markComplete(false, "Scan failed: ${t.message}")
             }
@@ -236,28 +243,21 @@ class MainActivity : AppCompatActivity(),
         lifecycleScope.launch {
             try {
                 val dash = withContext(Dispatchers.IO) { PythonBridge.getScreenerDashboard() }
-                val scanElem = dash.get("scan")
-                val scan = if (scanElem != null && scanElem.isJsonObject) scanElem.asJsonObject else null
-                val stocksElem = dash.get("stocks")
-                val arr = if (stocksElem != null && stocksElem.isJsonArray) stocksElem.asJsonArray else null
-                val type = object : TypeToken<List<ScreenerStock>>() {}.type
-                val items: List<ScreenerStock> = if (arr != null) {
-                    gson.fromJson(arr, type) ?: emptyList()
-                } else {
-                    emptyList()
-                }
-                val meta = buildString {
-                    if (scan != null && !scan.isJsonNull) {
-                        append("${scan.get("passed_l1")?.asInt ?: 0} passed L1")
-                        append(" · ${scan.get("high_count")?.asInt ?: 0} high")
-                        append(" · ${scan.get("watch_count")?.asInt ?: 0} watch")
-                        val at = scan.get("scanned_at")?.asString
-                        if (!at.isNullOrBlank()) append(" · ${formatIstTime(at)}")
+                val state = ScreenerJsonParser.parseDashboard(
+                    dash,
+                    getString(R.string.screener_empty)
+                )
+                val meta = if (dash.get("scan")?.isJsonObject == true) {
+                    val at = dash.getAsJsonObject("scan").get("scanned_at")?.asString
+                    if (!at.isNullOrBlank()) {
+                        "${state.metaLine} · ${formatIstTime(at)}"
                     } else {
-                        append(getString(R.string.screener_empty))
+                        state.metaLine
                     }
+                } else {
+                    state.metaLine
                 }
-                screenerFragment?.bindData(items, meta)
+                screenerFragment?.bindState(state.copy(metaLine = meta))
             } catch (t: Throwable) {
                 Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
             } finally {
