@@ -148,6 +148,30 @@ class Database:
               raw_columns TEXT,
               user_verified INTEGER DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS swing_run (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              run_at TEXT,
+              regime TEXT,
+              regime_bullish INTEGER,
+              momentum_count INTEGER,
+              sleeping_count INTEGER,
+              universe_size INTEGER,
+              priced_count INTEGER,
+              message TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS swing_hit (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              run_id INTEGER,
+              symbol TEXT,
+              name TEXT,
+              screen TEXT,
+              close REAL,
+              score REAL,
+              signals TEXT,
+              metrics TEXT
+            );
             """
         )
         self.conn.commit()
@@ -591,6 +615,105 @@ class Database:
             (1 if verified else 0, latest["id"], symbol.upper()),
         )
         self.conn.commit()
+
+    def save_swing_run(self, meta: Dict[str, Any], hits: List[Dict[str, Any]]) -> int:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO swing_run(
+              run_at, regime, regime_bullish, momentum_count, sleeping_count,
+              universe_size, priced_count, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                meta.get("run_at"),
+                meta.get("regime"),
+                meta.get("regime_bullish"),
+                meta.get("momentum_count"),
+                meta.get("sleeping_count"),
+                meta.get("universe_size"),
+                meta.get("priced_count"),
+                meta.get("message"),
+            ),
+        )
+        run_id = cur.lastrowid
+        for h in hits:
+            cur.execute(
+                """
+                INSERT INTO swing_hit(
+                  run_id, symbol, name, screen, close, score, signals, metrics
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    h.get("symbol"),
+                    h.get("name"),
+                    h.get("screen"),
+                    h.get("close"),
+                    h.get("score"),
+                    json.dumps(h.get("signals") or []),
+                    json.dumps(h.get("metrics") or {}),
+                ),
+            )
+        self.conn.commit()
+        return int(run_id)
+
+    def latest_swing_run(self) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        row = cur.execute(
+            "SELECT * FROM swing_run ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_swing_hits(
+        self,
+        run_id: Optional[int] = None,
+        screen: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        if run_id is None:
+            latest = self.latest_swing_run()
+            if not latest:
+                return []
+            run_id = latest["id"]
+        sql = "SELECT * FROM swing_hit WHERE run_id = ?"
+        params: List[Any] = [run_id]
+        if screen and screen != "all":
+            sql += " AND screen = ?"
+            params.append(screen)
+        sql += " ORDER BY score DESC"
+        rows = cur.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for key in ("signals", "metrics"):
+                try:
+                    d[key] = json.loads(d.get(key) or "null")
+                except Exception:
+                    d[key] = None
+            out.append(d)
+        return out
+
+    def get_swing_hit(self, symbol: str, run_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        if run_id is None:
+            latest = self.latest_swing_run()
+            if not latest:
+                return None
+            run_id = latest["id"]
+        row = cur.execute(
+            "SELECT * FROM swing_hit WHERE run_id = ? AND symbol = ?",
+            (run_id, symbol.upper()),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for key in ("signals", "metrics"):
+            try:
+                d[key] = json.loads(d.get(key) or "null")
+            except Exception:
+                d[key] = None
+        return d
 
     def set_setting(self, key: str, value: Any) -> None:
         cur = self.conn.cursor()

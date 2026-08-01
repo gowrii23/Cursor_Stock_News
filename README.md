@@ -11,15 +11,16 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 | **Home** | Idiosyncratic drop + news severity (Nifty 100) |
 | **News** | Cached headlines |
 | **Screener** | screener.in capture → Layer 1/2/3 pre-rating funnel (~613 stocks) |
+| **Swing** | Momentum First + Sleeping Giant screens (NSE bhavcopy, free) |
 
 ## Download (latest debug APK)
 
-**[Download APK v1.3.3](releases/bse-blueprint-screener-1.3.3-debug.apk)** — Null-safe JSON loads (fixes “Load failed: JsonNull”), same UX as 1.3.2.
+**[Download APK v1.4.0](releases/bse-blueprint-screener-1.4.0-debug.apk)** — Swing tab: momentum + sleeping giant screens (NSE free data).
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.3.3-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.4.0-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.
@@ -50,6 +51,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 3. Tap **Start Capture** — paginates through ~25 pages (~3–5 min)
 4. Progress modal runs Layer 1 filters, Layer 2 scoring, Layer 3 technical overlay on shortlist
 5. Review **80+ High** / **60–79 Watch** tiers; tap a stock for score breakdown + manual verification checklist
+
+## Swing tab (first run)
+
+1. Open **Swing** tab → **Run Swing Screen** (or toolbar **Run**)
+2. App syncs NSE bhavcopy for Nifty 100 (free, no API key)
+3. Checks **market regime** (Nifty vs 200 SMA) and runs:
+   - **Momentum First** — only when regime is bullish
+   - **Sleeping Giant** — dormant base breakout (price/volume only)
+4. Filter by screen type; tap a hit for signal breakdown
 
 ## Home tab (first run)
 
