@@ -106,6 +106,8 @@
     <string name="pattas_scan_login_needed">Login required — tap Open login page, sign in, then Start Capture.</string>
     <string name="pattas_scan_symbol">Loading %1$s (%2$d of %3$d)…</string>
     <string name="pattas_scan_complete">Captured %1$d symbols — processing…</string>
+    <string name="pattas_scan_skipped">Skipped %1$s (%2$s)</string>
+    <string name="pattas_scan_complete_with_skips">Captured %1$d symbols (%2$d skipped) — processing…</string>
     <string name="pattas_moat_verified">I verified moat / management quality for this stock</string>
     <string name="pattas_pillars_title">Pillar breakdown (vs peer median)</string>
     <string name="pattas_basket_fallback">Basket median (no sector peers found)</string>

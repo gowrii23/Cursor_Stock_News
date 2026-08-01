@@ -30,6 +30,7 @@ class PattasScanActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val gson = Gson()
     private val capturedRows = mutableListOf<Map<String, Any?>>()
+    private val skippedSymbols = mutableListOf<String>()
     private var symbols: List<String> = emptyList()
     private var currentIndex = 0
     private var capturing = false
@@ -95,6 +96,7 @@ class PattasScanActivity : AppCompatActivity() {
         if (capturing) return
         capturing = true
         capturedRows.clear()
+        skippedSymbols.clear()
         currentIndex = 0
         extractAttempts = 0
         captureButton.isEnabled = false
@@ -134,39 +136,73 @@ class PattasScanActivity : AppCompatActivity() {
                     pauseForLogin()
                     return
                 }
+                if (obj.optBoolean("skip", false)) {
+                    skipCurrentSymbol(obj.optString("reason", "unavailable"))
+                    return
+                }
                 if (obj.optBoolean("retry", false) && extractAttempts < MAX_EXTRACT_ATTEMPTS) {
                     retryExtract(err)
                     return
                 }
-                failCapture(err)
+                // Unrecoverable for this symbol — skip instead of aborting whole scan
+                skipCurrentSymbol(err)
+                return
+            }
+
+            if (obj.optBoolean("skip", false)) {
+                skipCurrentSymbol(obj.optString("reason", "unavailable"))
                 return
             }
 
             val rowObj = obj.optJSONObject("row")
-            if (rowObj == null || rowObj.length() < 2) {
+            if (rowObj == null || rowObj.length() < 1) {
                 if (extractAttempts < MAX_EXTRACT_ATTEMPTS) {
                     retryExtract("Ratios not ready — retrying…")
                     return
                 }
-                failCapture("Could not parse ratios for ${symbols[currentIndex]}")
+                skipCurrentSymbol("no ratios parsed")
                 return
             }
 
             val type = object : TypeToken<Map<String, Any?>>() {}.type
             val row: Map<String, Any?> = gson.fromJson(rowObj.toString(), type)
-            capturedRows.add(row)
-
-            if (currentIndex + 1 < symbols.size) {
-                handler.postDelayed({ loadSymbol(currentIndex + 1) }, PAGE_DELAY_MS)
-            } else {
-                finishCapture()
+            if (!hasMeaningfulData(row)) {
+                if (extractAttempts < MAX_EXTRACT_ATTEMPTS) {
+                    retryExtract("Waiting for ratio panel…")
+                    return
+                }
+                skipCurrentSymbol("no usable ratios")
+                return
             }
+            capturedRows.add(row)
+            advanceToNext()
         } catch (t: Throwable) {
             if (extractAttempts < MAX_EXTRACT_ATTEMPTS) {
                 retryExtract("Parse error — retrying…")
             } else {
-                failCapture("Parse error: ${t.message}")
+                skipCurrentSymbol("parse error")
             }
+        }
+    }
+
+    private fun hasMeaningfulData(row: Map<String, Any?>): Boolean {
+        val keys = listOf("P/E", "CMP Rs.", "Div Yld %", "Debt / Eq", "ROCE %", "ROE %", "ROE 3Yr %", "Ind PE")
+        return keys.any { row[it] != null && row[it].toString().isNotBlank() }
+    }
+
+    private fun skipCurrentSymbol(reason: String) {
+        val sym = symbols.getOrNull(currentIndex) ?: return
+        skippedSymbols.add("$sym:$reason")
+        statusText.text = getString(R.string.pattas_scan_skipped, sym, reason)
+        advanceToNext()
+    }
+
+    private fun advanceToNext() {
+        extractAttempts = 0
+        if (currentIndex + 1 < symbols.size) {
+            handler.postDelayed({ loadSymbol(currentIndex + 1) }, PAGE_DELAY_MS)
+        } else {
+            finishCapture()
         }
     }
 
@@ -195,9 +231,20 @@ class PattasScanActivity : AppCompatActivity() {
     private fun finishCapture() {
         capturing = false
         progress.visibility = View.GONE
-        statusText.text = getString(R.string.pattas_scan_complete, capturedRows.size)
+        captureButton.isEnabled = true
+        loginButton.isEnabled = true
+        statusText.text = if (skippedSymbols.isEmpty()) {
+            getString(R.string.pattas_scan_complete, capturedRows.size)
+        } else {
+            getString(
+                R.string.pattas_scan_complete_with_skips,
+                capturedRows.size,
+                skippedSymbols.size
+            )
+        }
         val result = Intent().apply {
             putExtra(EXTRA_ROWS_JSON, gson.toJson(capturedRows))
+            putExtra(EXTRA_SKIPPED_JSON, gson.toJson(skippedSymbols))
         }
         setResult(RESULT_OK, result)
         handler.postDelayed({ finish() }, 600)
@@ -206,6 +253,7 @@ class PattasScanActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SYMBOLS = "symbols"
         const val EXTRA_ROWS_JSON = "rows_json"
+        const val EXTRA_SKIPPED_JSON = "skipped_json"
         private const val LOGIN_URL = "https://www.screener.in/login/"
         const val PAGE_DELAY_MS = 2500L
         private const val PAGE_LOAD_DELAY_MS = 2500L
@@ -228,36 +276,87 @@ class PattasScanActivity : AppCompatActivity() {
                 var symMatch = path.match(/\/company\/([^/]+)\//);
                 if (symMatch) row.symbol = symMatch[1].toUpperCase();
 
+                var title = (document.title || '').toLowerCase();
+                var bodyText = document.body ? document.body.innerText : '';
+                var heading = document.querySelector('h1, h2');
+                var headingText = heading ? heading.innerText.toLowerCase() : '';
+                var is404 = title.indexOf('404') >= 0 ||
+                  bodyText.indexOf('Page Not Found') >= 0 ||
+                  bodyText.indexOf('Error 404') >= 0 ||
+                  headingText.indexOf('404') >= 0 ||
+                  headingText.indexOf('not found') >= 0;
+                if (is404) {
+                  return JSON.stringify({skip: true, reason: '404 not found', symbol: row.symbol || ''});
+                }
+
                 function norm(s) {
                   return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
                 }
 
+                function cleanVal(val) {
+                  if (!val) return null;
+                  val = val.replace(/\u00a0/g, ' ').trim();
+                  if (!val || val === '-' || val === '—' || val === 'N/A') return null;
+                  return val;
+                }
+
+                function extractValue(li) {
+                  var numEl = li.querySelector('.number');
+                  if (numEl) return cleanVal(numEl.innerText);
+                  var valEl = li.querySelector('.value, .nowrap.value, span.value');
+                  if (valEl) {
+                    var t = valEl.innerText.replace(/\u00a0/g, ' ').trim();
+                    var m = t.match(/-?\d[\d,]*\.?\d*/);
+                    return cleanVal(m ? m[0] : t);
+                  }
+                  return null;
+                }
+
                 function setField(label, val) {
-                  if (!val || val === '-' || val === '—') return;
+                  val = cleanVal(val);
+                  if (!val) return;
                   var n = norm(label);
                   if (n.indexOf('stock p/e') >= 0 || n === 'p/e' || n === 'pe') row['P/E'] = val;
                   else if (n.indexOf('dividend yield') >= 0 || n.indexOf('div yld') >= 0) row['Div Yld %'] = val;
                   else if (n.indexOf('current price') >= 0 || n === 'cmp') row['CMP Rs.'] = val;
-                  else if (n.indexOf('debt') >= 0 && n.indexOf('eq') >= 0) row['Debt / Eq'] = val;
+                  else if (n.indexOf('debt') >= 0 && (n.indexOf('eq') >= 0 || n.indexOf('equity') >= 0)) row['Debt / Eq'] = val;
                   else if (n.indexOf('ind pe') >= 0 || n.indexOf('industry pe') >= 0) row['Ind PE'] = val;
                   else if (n.indexOf('roe 3') >= 0 || n.indexOf('roe 3yr') >= 0) row['ROE 3Yr %'] = val;
-                  else if (n === 'roce' || n.indexOf('roce %') >= 0) row['ROCE %'] = val;
-                  else if (n === 'roe' || (n.indexOf('roe %') >= 0 && n.indexOf('3') < 0)) row['ROE %'] = val;
+                  else if ((n.indexOf('roe 10') >= 0) && !row['ROE 3Yr %']) row['ROE 3Yr %'] = val;
+                  else if (n.indexOf('roce 10') >= 0) row['ROCE 10Yr %'] = val;
+                  else if (n === 'roce' || (n.indexOf('roce') >= 0 && n.indexOf('10') < 0)) row['ROCE %'] = val;
+                  else if (n === 'roe' || (n.indexOf('roe') >= 0 && n.indexOf('3') < 0 && n.indexOf('10') < 0)) row['ROE %'] = val;
                   else if (n.indexOf('market cap') >= 0) row['Mar Cap Rs.Cr.'] = val;
+                  else if (n.indexOf('book value') >= 0) row['Book Value'] = val;
+                  else if (n.indexOf('int coverage') >= 0 || n.indexOf('interest coverage') >= 0) row['Int Coverage'] = val;
+                  else if (n === 'opm' || n.indexOf('opm %') === 0) row['OPM %'] = val;
+                  else if (n.indexOf('opm 5') >= 0) row['OPM 5Year %'] = val;
+                  else if (n.indexOf('cmp') >= 0 && n.indexOf('fcf') >= 0) row['CMP / FCF'] = val;
+                  else if (n.indexOf('price to book') >= 0) row['Price to Book'] = val;
+                  else if (n.indexOf('face value') >= 0) row['Face Value'] = val;
                 }
 
-                // Top ratio panel (logged-in and guest layouts)
-                document.querySelectorAll('li.flex.flex-space-between, .company-ratios li, #top-ratios li').forEach(function(li) {
-                  var nameEl = li.querySelector('.name, .name span, span.name');
-                  var numEl = li.querySelector('.number, .value .number, span.number');
-                  if (nameEl && numEl) setField(nameEl.innerText, numEl.innerText);
-                });
+                function scanLi(li) {
+                  var nameEl = li.querySelector('.name, .name span, span.name, th, dt');
+                  if (!nameEl) return;
+                  var val = extractValue(li);
+                  if (!val && li.querySelectorAll('td').length >= 2) {
+                    var tds = li.querySelectorAll('td');
+                    val = cleanVal(tds[tds.length - 1].innerText);
+                  }
+                  if (val) setField(nameEl.innerText, val);
+                }
 
-                // Alternate ratio rows (some logged-in pages)
-                document.querySelectorAll('[data-source="default"]').forEach(function(li) {
-                  var nameEl = li.querySelector('.name');
-                  var numEl = li.querySelector('.number');
-                  if (nameEl && numEl) setField(nameEl.innerText, numEl.innerText);
+                // Top ratio panel + logged-in custom ratio list
+                document.querySelectorAll(
+                  'li.flex.flex-space-between, li.flex-space-between, .company-ratios li, #top-ratios li, [data-source] li, ul.ratios li'
+                ).forEach(scanLi);
+
+                document.querySelectorAll('[data-source="default"]').forEach(scanLi);
+
+                // Any list item with a .name child (logged-in front-page ratios)
+                document.querySelectorAll('li').forEach(function(li) {
+                  if (li.querySelector('.name')) scanLi(li);
                 });
 
                 // Compounded / ranges table — ROE 3yr
@@ -266,27 +365,29 @@ class PattasScanActivity : AppCompatActivity() {
                   if (cells.length >= 2) {
                     var label = cells[0].innerText.trim();
                     if (label.indexOf('3 Years') >= 0 || label.indexOf('3 Year') >= 0) {
-                      row['ROE 3Yr %'] = cells[1].innerText.trim();
+                      row['ROE 3Yr %'] = cleanVal(cells[1].innerText);
                     }
                   }
                 });
 
-                // Ratios section table — Debt/Eq row if present
+                // Ratios section table rows
                 var ratios = document.querySelector('#ratios') || document.querySelector('[id*="ratios"]');
                 if (ratios) {
                   ratios.querySelectorAll('tr').forEach(function(tr) {
-                    var labelCell = tr.querySelector('td.text, td:first-child');
+                    var labelCell = tr.querySelector('td.text, td:first-child, th.text');
                     if (!labelCell) return;
-                    var label = labelCell.innerText.trim();
                     var cells = tr.querySelectorAll('td');
                     if (cells.length < 2) return;
-                    var val = cells[cells.length - 1].innerText.trim();
-                    setField(label, val);
+                    setField(labelCell.innerText, cells[cells.length - 1].innerText);
                   });
                 }
 
-                if (!row['P/E']) {
-                  var bodyText = document.body ? document.body.innerText : '';
+                function hasData(r) {
+                  return r['P/E'] || r['CMP Rs.'] || r['Div Yld %'] || r['Debt / Eq'] ||
+                    r['ROCE %'] || r['ROE %'] || r['ROE 3Yr %'] || r['Ind PE'];
+                }
+
+                if (!hasData(row)) {
                   if (bodyText.indexOf('Sign in') >= 0 || bodyText.indexOf('Log in') >= 0) {
                     return JSON.stringify({error: 'Login required for ratios', needsLogin: true, retry: false});
                   }
@@ -294,7 +395,7 @@ class PattasScanActivity : AppCompatActivity() {
                 }
                 return JSON.stringify({row: row});
               } catch(e) {
-                return JSON.stringify({error: e.message, retry: false});
+                return JSON.stringify({error: e.message, retry: false, skip: true, reason: 'js error'});
               }
             })();
         """
