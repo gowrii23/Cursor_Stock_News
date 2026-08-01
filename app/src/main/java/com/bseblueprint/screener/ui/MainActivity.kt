@@ -265,10 +265,12 @@ class MainActivity : AppCompatActivity(),
                 val watch = JsonSafe.int(result, "watch_count") ?: 0
                 val low = JsonSafe.int(result, "low_count") ?: 0
                 val l1 = JsonSafe.int(result, "passed_l1") ?: 0
+                val incomplete = JsonSafe.int(result, "incomplete_count") ?: 0
                 val success = status == "ok"
                 runSheet?.markComplete(
                     success,
-                    "Scan done — $high high (80+) · $watch watch · $low low · $l1 L1 pass"
+                    "Scan done — $high high (70+) · $watch watch · $low low · $l1 L1 pass" +
+                        (if (incomplete > 0) " · $incomplete incomplete" else "")
                 )
                 if (success) {
                     loadScreener()

@@ -41,6 +41,8 @@ class Database:
             cur.execute("ALTER TABLE screener_scan ADD COLUMN low_count INTEGER")
         if "top_review" not in scan_cols:
             cur.execute("ALTER TABLE screener_scan ADD COLUMN top_review TEXT")
+        if "incomplete_count" not in scan_cols:
+            cur.execute("ALTER TABLE screener_scan ADD COLUMN incomplete_count INTEGER")
         swing_run_cols = {row[1] for row in cur.execute("PRAGMA table_info(swing_run)")}
         if swing_run_cols:
             if "as_of" not in swing_run_cols:
@@ -143,6 +145,9 @@ class Database:
               passed_l1 INTEGER,
               high_count INTEGER,
               watch_count INTEGER,
+              low_count INTEGER,
+              incomplete_count INTEGER,
+              top_review TEXT,
               message TEXT
             );
 
@@ -506,8 +511,8 @@ class Database:
             """
             INSERT INTO screener_scan(
               scanned_at, source_url, total_raw, passed_l1, high_count, watch_count,
-              low_count, top_review, message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              low_count, incomplete_count, top_review, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meta.get("scanned_at"),
@@ -517,6 +522,7 @@ class Database:
                 meta.get("high_count"),
                 meta.get("watch_count"),
                 meta.get("low_count"),
+                meta.get("incomplete_count"),
                 json.dumps(meta.get("top_review") or []),
                 meta.get("message"),
             ),

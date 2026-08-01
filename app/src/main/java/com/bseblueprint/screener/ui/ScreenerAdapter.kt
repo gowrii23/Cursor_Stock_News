@@ -47,9 +47,9 @@ class ScreenerAdapter(
             cmp.text = item.cmp?.let { "₹%.2f".format(it) } ?: "—"
             val tier = item.tier ?: "low"
             tierChip.text = when (tier) {
-                "high" -> "80+"
-                "watch" -> "60–79"
-                "low" -> "<60"
+                "high" -> "70+"
+                "watch" -> "50–69"
+                "low" -> "<50"
                 else -> tier
             }
             val l3s = item.layer3?.signals?.size ?: 0
