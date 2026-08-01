@@ -39,13 +39,16 @@ def process_screener_capture(
         report(
             progress_cb,
             65,
-            f"Layer 1: {preview['passed_l1']}/{preview['total_raw']} passed",
+            (
+                f"Layer 1: {preview['passed_l1']}/{preview['total_raw']} passed "
+                f"({preview.get('incomplete', 0)} incomplete data)"
+            ),
         )
 
         shortlist_syms = [
             s["symbol"]
             for s in preview["stocks"]
-            if (s.get("score_total") or 0) >= 60 and s.get("symbol")
+            if (s.get("score_total") or 0) >= 50 and s.get("symbol")
         ]
         if shortlist_syms:
             report(
@@ -70,9 +73,11 @@ def process_screener_capture(
             "high_count": result["high_conviction"],
             "watch_count": result["watchlist"],
             "low_count": result["low_conviction"],
+            "incomplete_count": result.get("incomplete") or 0,
             "top_review": top_review,
             "message": (
                 f"raw={result['total_raw']} l1={result['passed_l1']} "
+                f"incomplete={result.get('incomplete', 0)} "
                 f"high={result['high_conviction']} watch={result['watchlist']} "
                 f"low={result['low_conviction']}"
             ),
@@ -83,9 +88,10 @@ def process_screener_capture(
             progress_cb,
             100,
             (
-                f"Done — {result['high_conviction']} high (80+) · "
+                f"Done — {result['high_conviction']} high (70+) · "
                 f"{result['watchlist']} watch · {result['low_conviction']} low · "
-                f"{result['passed_l1']} L1 pass"
+                f"{result['passed_l1']} L1 pass "
+                f"({result.get('incomplete', 0)} incomplete rejected)"
             ),
         )
         return json.dumps(
@@ -95,6 +101,7 @@ def process_screener_capture(
                 "high_count": result["high_conviction"],
                 "watch_count": result["watchlist"],
                 "low_count": result["low_conviction"],
+                "incomplete_count": result.get("incomplete") or 0,
                 "passed_l1": result["passed_l1"],
                 "total_raw": result["total_raw"],
                 "top_review": top_review,

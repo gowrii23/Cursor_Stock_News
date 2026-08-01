@@ -15,12 +15,12 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 
 ## Download (latest debug APK)
 
-**[Download APK v1.4.1](releases/bse-blueprint-screener-1.4.1-debug.apk)** — Swing detector fixes: real ranking, dormancy math, as-of/regime states.
+**[Download APK v1.4.2](releases/bse-blueprint-screener-1.4.2-debug.apk)** — Screener logic tighten: incomplete ≠ L1 pass, available-points scoring, retuned tiers.
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.4.1-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.4.2-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.

@@ -44,6 +44,10 @@ object ScreenerJsonParser {
         val low = JsonSafe.int(scan, "low_count") ?: 0
         append("$l1 passed L1 of $total")
         append(" · $high high · $watch watch · $low low")
+        val incomplete = JsonSafe.int(scan, "incomplete_count")
+        if (incomplete != null && incomplete > 0) {
+            append(" · $incomplete incomplete")
+        }
     }
 
     private fun parseStocks(arr: JsonArray): List<ScreenerStock> {

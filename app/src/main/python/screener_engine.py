@@ -11,6 +11,14 @@ MANUAL_VERIFY_ITEMS = [
     "Related-party transactions within sector norms",
 ]
 
+# Core fields required for an honest L1 pass (unknown ≠ clean)
+L1_REQUIRED_FIELDS = (
+    ("debt_eq", "Debt/Eq"),
+    ("roce", "ROCE"),
+    ("opm", "OPM"),
+    ("int_coverage", "Interest coverage"),
+)
+
 # Column header → normalized field
 _FIELD_ALIASES: Dict[str, List[str]] = {
     "name": ["name"],
@@ -87,25 +95,22 @@ def _symbol_from_name(name: str) -> str:
 def layer1_filter(row: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     """
     Mandatory automated checks. Returns (passed, fail_reasons, manual_notes).
-  """
+
+    Missing core fields → fail (incomplete). Unknown is not treated as clean.
+    """
     fails: List[str] = []
     manual: List[str] = list(MANUAL_VERIFY_ITEMS)
 
-    debt = row.get("debt_eq")
-    if debt is not None and debt >= 1.0:
-        fails.append(f"Debt/Eq {debt:.2f} ≥ 1.0")
+    missing = [label for key, label in L1_REQUIRED_FIELDS if row.get(key) is None]
+    if missing:
+        fails.append("Incomplete data — missing " + ", ".join(missing))
+        # Still record threshold fails for any fields that are present
+        _append_threshold_fails(row, fails)
+        if row.get("pledged_pct") is None:
+            manual.append("Promoter pledge % — verify on screener.in (< 20%)")
+        return False, fails, manual
 
-    icr = row.get("int_coverage")
-    if icr is not None and icr <= 3.0:
-        fails.append(f"Interest coverage {icr:.1f} ≤ 3×")
-
-    opm = row.get("opm")
-    if opm is not None and opm <= 10.0:
-        fails.append(f"OPM {opm:.1f}% ≤ 10%")
-
-    roce = row.get("roce")
-    if roce is not None and roce <= 12.0:
-        fails.append(f"ROCE {roce:.1f}% ≤ 12%")
+    _append_threshold_fails(row, fails)
 
     pledged = row.get("pledged_pct")
     if pledged is not None:
@@ -122,101 +127,175 @@ def layer1_filter(row: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     return len(fails) == 0, fails, manual
 
 
+def _append_threshold_fails(row: Dict[str, Any], fails: List[str]) -> None:
+    debt = row.get("debt_eq")
+    if debt is not None and debt >= 1.0:
+        fails.append(f"Debt/Eq {debt:.2f} ≥ 1.0")
+
+    icr = row.get("int_coverage")
+    if icr is not None and icr <= 3.0:
+        fails.append(f"Interest coverage {icr:.1f} ≤ 3×")
+
+    opm = row.get("opm")
+    if opm is not None and opm <= 10.0:
+        fails.append(f"OPM {opm:.1f}% ≤ 10%")
+
+    roce = row.get("roce")
+    if roce is not None and roce <= 12.0:
+        fails.append(f"ROCE {roce:.1f}% ≤ 12%")
+
+
 def layer2_score(row: Dict[str, Any]) -> Tuple[float, Dict[str, float], str]:
-    """100-point weighted score. Returns (total, components, tier)."""
-    parts = {
+    """
+    Score as % of *available* category points (missing columns don't silently cap you),
+    then map to 0–100. Tiers: high ≥75, watch ≥55, else low.
+    """
+    earned = {
+        "quality": 0.0,
+        "catalyst": 0.0,
+        "ownership": 0.0,
+        "valuation": 0.0,
+    }
+    available = {
         "quality": 0.0,
         "catalyst": 0.0,
         "ownership": 0.0,
         "valuation": 0.0,
     }
 
-    # A. Business quality (30)
+    # A. Business quality (max 30 when all inputs present)
     roce = row.get("roce")
     if roce is not None:
+        available["quality"] += 8
         if roce >= 20:
-            parts["quality"] += 8
+            earned["quality"] += 8
         elif roce >= 12:
-            parts["quality"] += 4
+            earned["quality"] += 4
+
     opm = row.get("opm")
     if opm is not None:
+        available["quality"] += 7
         if opm >= 20:
-            parts["quality"] += 7
+            earned["quality"] += 7
         elif opm >= 10:
-            parts["quality"] += 3
+            earned["quality"] += 3
+
     sales3 = row.get("sales_var_3y")
     profit3 = row.get("profit_var_3y")
-    if sales3 is not None and profit3 is not None:
+    has_3y = sales3 is not None and profit3 is not None
+    if has_3y:
+        available["quality"] += 8
         if sales3 > 10 and profit3 > 10:
-            parts["quality"] += 8
+            earned["quality"] += 8
         elif sales3 > 0 or profit3 > 0:
-            parts["quality"] += 4
+            earned["quality"] += 4
     elif row.get("qtr_sales_var") is not None and row.get("qtr_profit_var") is not None:
-        parts["quality"] += 4
+        available["quality"] += 4
+        earned["quality"] += 4
+
     debt = row.get("debt_eq")
     if debt is not None:
+        available["quality"] += 7
         if debt < 0.3:
-            parts["quality"] += 7
+            earned["quality"] += 7
         elif debt < 1.0:
-            parts["quality"] += 4
+            earned["quality"] += 4
 
-    # B. Catalyst (30) — quarterly inflection proxies
+    # B. Catalyst (max 30) — QoQ inflection; capped without multi-year support
     q_sales = row.get("qtr_sales_var")
     q_profit = row.get("qtr_profit_var")
+    multi_year_ok = has_3y and sales3 is not None and profit3 is not None and (
+        sales3 > 0 and profit3 > 0
+    )
     if q_sales is not None and q_profit is not None:
+        # Base QoQ bucket (max 20)
+        available["catalyst"] += 20
         if q_sales > 15 and q_profit > 15:
-            parts["catalyst"] += 20
+            earned["catalyst"] += 20
         elif q_sales > 5 or q_profit > 5:
-            parts["catalyst"] += 10
+            earned["catalyst"] += 10
         elif q_sales > 0 and q_profit > 0:
-            parts["catalyst"] += 5
-    if q_sales is not None and q_profit is not None and q_sales > 10 and abs(q_profit) < 30:
-        parts["catalyst"] += 10  # revenue inflection, profit not fully priced
+            earned["catalyst"] += 5
 
-    # C. Ownership (25)
+        # Extra inflection bonus only if 3y growth supports the story
+        if multi_year_ok:
+            available["catalyst"] += 10
+            if q_sales > 10 and abs(q_profit) < 30:
+                earned["catalyst"] += 10
+        # else: no extra 10 available — one hot quarter can't max catalyst
+    elif has_3y:
+        available["catalyst"] += 10
+        if sales3 > 10 and profit3 > 10:
+            earned["catalyst"] += 10
+        elif sales3 > 0 or profit3 > 0:
+            earned["catalyst"] += 5
+
+    # C. Ownership (max 25)
     prom_chg = row.get("promoter_change")
     if prom_chg is not None:
+        available["ownership"] += 10
         if prom_chg > 0.5:
-            parts["ownership"] += 10
+            earned["ownership"] += 10
         elif prom_chg >= 0:
-            parts["ownership"] += 5
+            earned["ownership"] += 5
     elif row.get("promoter_hold") is not None:
-        parts["ownership"] += 5
+        available["ownership"] += 5
+        earned["ownership"] += 5
+
     pledged = row.get("pledged_pct")
     if pledged is not None:
+        available["ownership"] += 8
         if pledged < 5:
-            parts["ownership"] += 8
+            earned["ownership"] += 8
         elif pledged < 15:
-            parts["ownership"] += 4
-    prom = row.get("promoter_hold")
-    if prom is not None and prom > 50:
-        parts["ownership"] += 7
+            earned["ownership"] += 4
 
-    # D. Valuation (15)
+    prom = row.get("promoter_hold")
+    if prom is not None:
+        available["ownership"] += 7
+        if prom > 50:
+            earned["ownership"] += 7
+
+    # D. Valuation (max 15)
     pe = row.get("pe")
     ind_pe = row.get("ind_pe")
     if pe is not None and ind_pe is not None and ind_pe > 0:
+        available["valuation"] += 8
         discount = (ind_pe - pe) / ind_pe
         if discount > 0.2:
-            parts["valuation"] += 8
+            earned["valuation"] += 8
         elif discount > 0:
-            parts["valuation"] += 4
-    elif pe is not None and pe < 25:
-        parts["valuation"] += 4
+            earned["valuation"] += 4
+    elif pe is not None:
+        available["valuation"] += 4
+        if pe < 25:
+            earned["valuation"] += 4
+
     peg = row.get("peg")
     if peg is not None:
+        available["valuation"] += 7
         if peg < 1.0:
-            parts["valuation"] += 7
+            earned["valuation"] += 7
         elif peg < 1.5:
-            parts["valuation"] += 4
+            earned["valuation"] += 4
 
-    total = round(min(100.0, sum(parts.values())), 1)
-    if total >= 80:
+    avail_total = sum(available.values())
+    earn_total = sum(earned.values())
+    # Raw points toward 100 — missing columns add 0 (no silent pass, no renorm boost).
+    # Incomplete L1 already requires Debt/Eq, ROCE, OPM, ICR.
+    parts = {k: round(earned[k], 1) for k in earned}
+    total = round(min(100.0, earn_total), 1)
+
+    # Retuned tiers: High needs broad strength across categories, not one hot quarter
+    if total >= 70:
         tier = "high"
-    elif total >= 60:
+    elif total >= 50:
         tier = "watch"
     else:
         tier = "low"
+
+    parts["_available"] = round(avail_total, 1)
+    parts["_earned_raw"] = round(earn_total, 1)
     return total, {k: round(v, 1) for k, v in parts.items()}, tier
 
 
@@ -238,7 +317,6 @@ def layer3_technical(
     closes = [float(r["close"]) for r in price_rows]
     volumes = [float(r.get("volume") or 0) for r in price_rows]
 
-    # Volume spike vs 90-day avg
     if len(volumes) >= 90:
         avg_vol = sum(volumes[-90:-1]) / 89
         today_vol = volumes[-1]
@@ -246,7 +324,6 @@ def layer3_technical(
             out["signals"].append("Volume ≥2× 90-day average")
             out["score"] += 25
 
-    # Base / consolidation: 60-day range < 10%
     if len(closes) >= 60:
         window = closes[-60:]
         lo, hi = min(window), max(window)
@@ -254,14 +331,12 @@ def layer3_technical(
             out["signals"].append("Tight 60-day base (<10% range)")
             out["score"] += 25
 
-    # Near 52-week high (252 trading days proxy)
     if len(closes) >= 120:
         hi_52 = max(closes[-252:]) if len(closes) >= 252 else max(closes)
         if closes[-1] >= hi_52 * 0.95:
             out["signals"].append("Within 5% of range high")
             out["score"] += 25
 
-    # Recent relative strength: up over 20 days while flat start
     if len(closes) >= 21:
         ret20 = (closes[-1] - closes[-21]) / closes[-21] if closes[-21] else 0
         if ret20 > 0.05:
@@ -272,11 +347,20 @@ def layer3_technical(
     return out
 
 
+def _l3_score(row: Dict[str, Any]) -> int:
+    l3 = row.get("layer3") or {}
+    try:
+        return int(l3.get("score") or 0)
+    except Exception:
+        return 0
+
+
 def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = None) -> Dict[str, Any]:
     """Full pipeline on captured screener.in rows."""
     normalized = [normalize_row(r) for r in rows]
     passed_l1: List[Dict[str, Any]] = []
     failed_l1: List[Dict[str, Any]] = []
+    incomplete = 0
 
     for row in normalized:
         if not row.get("symbol") and not row.get("name"):
@@ -285,6 +369,8 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
         row["l1_passed"] = ok
         row["l1_fails"] = fails
         row["manual_notes"] = manual
+        if any("Incomplete data" in f for f in fails):
+            incomplete += 1
         if ok:
             score, breakdown, tier = layer2_score(row)
             row["score_total"] = score
@@ -297,8 +383,8 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
             row["tier"] = "rejected"
             failed_l1.append(row)
 
-    # Layer 3 on 60+ shortlist
-    shortlist = [r for r in passed_l1 if (r.get("score_total") or 0) >= 60]
+    # Layer 3 on watch+ shortlist (score ≥ 50 matches new watch floor)
+    shortlist = [r for r in passed_l1 if (r.get("score_total") or 0) >= 50]
     if run_layer3 and db is not None:
         for row in shortlist:
             sym = row.get("symbol") or ""
@@ -308,12 +394,17 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
         for row in shortlist:
             row["layer3"] = {"status": "skip", "signals": [], "score": 0}
 
-    passed_l1.sort(key=lambda r: r.get("score_total") or 0, reverse=True)
+    # Rank: L2 score first, then L3 timing strength (pre-run-up: quality then wake-up)
+    passed_l1.sort(
+        key=lambda r: (r.get("score_total") or 0, _l3_score(r), r.get("symbol") or ""),
+        reverse=True,
+    )
     low_count = len([r for r in passed_l1 if r.get("tier") == "low"])
     return {
         "total_raw": len(normalized),
         "passed_l1": len(passed_l1),
         "failed_l1": len(failed_l1),
+        "incomplete": incomplete,
         "high_conviction": len([r for r in passed_l1 if r.get("tier") == "high"]),
         "watchlist": len([r for r in passed_l1 if r.get("tier") == "watch"]),
         "low_conviction": low_count,
@@ -324,15 +415,16 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
 
 
 def pick_top_review(rows: List[Dict[str, Any]], limit: int = 3) -> List[Dict[str, Any]]:
-    """Best names from the full captured pool for pinned manual review."""
+    """Best L1-pass names by score for pinned manual review (honest shortlist)."""
     candidates: List[Dict[str, Any]] = []
     for row in rows:
+        if not row.get("l1_passed"):
+            continue
         sym = (row.get("symbol") or "").strip().upper()
         if not sym:
             continue
         score = float(row.get("score_total") or 0)
-        l1_ok = bool(row.get("l1_passed"))
-        tier = row.get("tier") or ("rejected" if not l1_ok else "low")
+        tier = row.get("tier") or "low"
         candidates.append(
             {
                 "symbol": sym,
@@ -340,20 +432,21 @@ def pick_top_review(rows: List[Dict[str, Any]], limit: int = 3) -> List[Dict[str
                 "cmp": row.get("cmp"),
                 "score_total": score,
                 "tier": tier,
-                "l1_passed": l1_ok,
+                "l1_passed": True,
+                "l3_score": _l3_score(row),
             }
         )
-    candidates.sort(key=lambda r: (r["score_total"], r["symbol"]), reverse=True)
+    candidates.sort(
+        key=lambda r: (r["score_total"], r.get("l3_score") or 0, r["symbol"]),
+        reverse=True,
+    )
     top = candidates[:limit]
     for item in top:
-        if not item["l1_passed"]:
-            item["review_badge"] = "L1 not passed — review manually"
-        elif item["score_total"] < 60:
-            item["review_badge"] = "Below 60 — review manually"
-        elif item["tier"] == "high":
-            item["review_badge"] = "80+ High conviction"
+        if item["tier"] == "high":
+            item["review_badge"] = "70+ High conviction"
         elif item["tier"] == "watch":
-            item["review_badge"] = "60–79 Watchlist"
+            item["review_badge"] = "50–69 Watchlist"
         else:
-            item["review_badge"] = "Below 60 — review manually"
+            item["review_badge"] = "Below 50 — review manually"
+        item.pop("l3_score", None)
     return top
