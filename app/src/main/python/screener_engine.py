@@ -355,7 +355,27 @@ def _l3_score(row: Dict[str, Any]) -> int:
         return 0
 
 
-def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = None) -> Dict[str, Any]:
+def _apply_blueprint_tags(
+    row: Dict[str, Any],
+    blueprint_map: Optional[Dict[str, List[str]]],
+) -> None:
+    """Tag Blueprint themes after L2. Bonus is for ranking only — tier unchanged."""
+    from blueprint_tagger import tags_for
+
+    sym = (row.get("symbol") or "").strip().upper()
+    tags = tags_for(sym, blueprint_map or {})
+    row["blueprint_tags"] = tags
+    row["blueprint_match"] = bool(tags)
+    # Ranking-only nudge; does not change score_total or High/Watch/Low tier
+    row["blueprint_bonus"] = 10.0 if tags else 0.0
+
+
+def process_rows(
+    rows: List[Dict[str, Any]],
+    run_layer3: bool = True,
+    db: Any = None,
+    blueprint_map: Optional[Dict[str, List[str]]] = None,
+) -> Dict[str, Any]:
     """Full pipeline on captured screener.in rows."""
     normalized = [normalize_row(r) for r in rows]
     passed_l1: List[Dict[str, Any]] = []
@@ -377,10 +397,12 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
             row["score_breakdown"] = breakdown
             row["tier"] = tier
             row["cmp"] = row.get("cmp")
+            _apply_blueprint_tags(row, blueprint_map)
             passed_l1.append(row)
         else:
             row["score_total"] = 0.0
             row["tier"] = "rejected"
+            _apply_blueprint_tags(row, blueprint_map)
             failed_l1.append(row)
 
     # Layer 3 on watch+ shortlist (score ≥ 50 matches new watch floor)
@@ -394,12 +416,18 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
         for row in shortlist:
             row["layer3"] = {"status": "skip", "signals": [], "score": 0}
 
-    # Rank: L2 score first, then L3 timing strength (pre-run-up: quality then wake-up)
+    # Rank: L2 score, L3 timing, then Blueprint bonus (within-tier tie-break only)
     passed_l1.sort(
-        key=lambda r: (r.get("score_total") or 0, _l3_score(r), r.get("symbol") or ""),
+        key=lambda r: (
+            r.get("score_total") or 0,
+            _l3_score(r),
+            r.get("blueprint_bonus") or 0,
+            r.get("symbol") or "",
+        ),
         reverse=True,
     )
     low_count = len([r for r in passed_l1 if r.get("tier") == "low"])
+    blueprint_count = len([r for r in passed_l1 if r.get("blueprint_match")])
     return {
         "total_raw": len(normalized),
         "passed_l1": len(passed_l1),
@@ -408,6 +436,7 @@ def process_rows(rows: List[Dict[str, Any]], run_layer3: bool = True, db: Any = 
         "high_conviction": len([r for r in passed_l1 if r.get("tier") == "high"]),
         "watchlist": len([r for r in passed_l1 if r.get("tier") == "watch"]),
         "low_conviction": low_count,
+        "blueprint_count": blueprint_count,
         "stocks": passed_l1,
         "rejected": failed_l1[:50],
         "all_rows": passed_l1 + failed_l1,

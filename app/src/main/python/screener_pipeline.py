@@ -3,17 +3,33 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from blueprint_tagger import load_blueprint_map, tags_for
 from db import Database
 from nse_fetch import fetch_ohlc_nse
+from pipeline import _asset_path, load_json_asset
 from progress_report import report
 from screener_engine import pick_top_review, process_rows
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCREEN_URL = "https://www.screener.in/screens/3835709/cursor/"
+
+
+def _load_blueprint_map() -> Dict[str, List[str]]:
+    blueprint_path = _asset_path("blueprint_tags.json")
+    alt_bp = os.path.join(os.environ.get("HOME", ""), "blueprint_tags.json")
+    bp_map = load_blueprint_map(
+        blueprint_path if os.path.exists(blueprint_path) else alt_bp
+    )
+    if not bp_map:
+        loaded = load_json_asset("blueprint_tags.json", {})
+        if isinstance(loaded, dict):
+            bp_map = {str(k).upper(): list(v) for k, v in loaded.items()}
+    return bp_map
 
 
 def process_screener_capture(
@@ -32,10 +48,11 @@ def process_screener_capture(
             return json.dumps({"status": "error", "message": "Invalid rows payload"})
 
         report(progress_cb, 55, f"Loaded {len(rows)} raw rows from screener.in")
+        bp_map = _load_blueprint_map()
 
         # Quick L1/L2 pass first to find shortlist symbols
         report(progress_cb, 58, "Running Layer 1 mandatory filters…")
-        preview = process_rows(rows, run_layer3=False, db=None)
+        preview = process_rows(rows, run_layer3=False, db=None, blueprint_map=bp_map)
         report(
             progress_cb,
             65,
@@ -62,7 +79,7 @@ def process_screener_capture(
                 logger.warning("Shortlist price fetch: %s", e)
 
         report(progress_cb, 85, "Running Layer 2 scoring + Layer 3 technical overlay…")
-        result = process_rows(rows, run_layer3=True, db=db)
+        result = process_rows(rows, run_layer3=True, db=db, blueprint_map=bp_map)
 
         top_review = pick_top_review(result.get("all_rows") or result["stocks"])
         meta = {
@@ -74,12 +91,14 @@ def process_screener_capture(
             "watch_count": result["watchlist"],
             "low_count": result["low_conviction"],
             "incomplete_count": result.get("incomplete") or 0,
+            "blueprint_count": result.get("blueprint_count") or 0,
             "top_review": top_review,
             "message": (
                 f"raw={result['total_raw']} l1={result['passed_l1']} "
                 f"incomplete={result.get('incomplete', 0)} "
                 f"high={result['high_conviction']} watch={result['watchlist']} "
-                f"low={result['low_conviction']}"
+                f"low={result['low_conviction']} "
+                f"blueprint={result.get('blueprint_count', 0)}"
             ),
         }
         db.save_screener_scan(meta, result["stocks"])
@@ -90,6 +109,7 @@ def process_screener_capture(
             (
                 f"Done — {result['high_conviction']} high (70+) · "
                 f"{result['watchlist']} watch · {result['low_conviction']} low · "
+                f"{result.get('blueprint_count', 0)} Blueprint · "
                 f"{result['passed_l1']} L1 pass "
                 f"({result.get('incomplete', 0)} incomplete rejected)"
             ),
@@ -102,6 +122,7 @@ def process_screener_capture(
                 "watch_count": result["watchlist"],
                 "low_count": result["low_conviction"],
                 "incomplete_count": result.get("incomplete") or 0,
+                "blueprint_count": result.get("blueprint_count") or 0,
                 "passed_l1": result["passed_l1"],
                 "total_raw": result["total_raw"],
                 "top_review": top_review,
@@ -123,6 +144,9 @@ _LIST_FIELDS = (
     "l1_passed",
     "layer3",
     "user_verified",
+    "blueprint_tags",
+    "blueprint_match",
+    "blueprint_bonus",
 )
 
 
@@ -130,13 +154,33 @@ def _slim_stock(row: Dict[str, Any]) -> Dict[str, Any]:
     return {k: row[k] for k in _LIST_FIELDS if k in row}
 
 
+def _ensure_blueprint_on_stock(
+    row: Dict[str, Any],
+    bp_map: Dict[str, List[str]],
+) -> Dict[str, Any]:
+    """Re-tag from map when older scans lack persisted Blueprint fields."""
+    tags = row.get("blueprint_tags")
+    if not isinstance(tags, list) or not tags:
+        tags = tags_for(str(row.get("symbol") or ""), bp_map)
+    row["blueprint_tags"] = list(tags)
+    row["blueprint_match"] = bool(tags)
+    row["blueprint_bonus"] = 10.0 if tags else 0.0
+    return row
+
+
 def get_screener_dashboard_json(db_path: Optional[str] = None) -> str:
     db = Database(db_path)
     try:
         scan = db.latest_screener_scan()
-        stocks = [_slim_stock(s) for s in db.get_screener_stocks()] if scan else []
+        bp_map = _load_blueprint_map()
+        stocks = []
+        if scan:
+            stocks = [
+                _slim_stock(_ensure_blueprint_on_stock(s, bp_map))
+                for s in db.get_screener_stocks()
+            ]
         top_review = []
-        counts = {"high": 0, "watch": 0, "low": 0, "all": 0}
+        counts = {"high": 0, "watch": 0, "low": 0, "all": 0, "blueprint": 0}
         if scan:
             top_review = scan.get("top_review") or []
             if isinstance(top_review, str):
@@ -144,11 +188,13 @@ def get_screener_dashboard_json(db_path: Optional[str] = None) -> str:
                     top_review = json.loads(top_review)
                 except Exception:
                     top_review = []
+            blueprint_count = sum(1 for s in stocks if s.get("blueprint_match"))
             counts = {
                 "high": scan.get("high_count") or 0,
                 "watch": scan.get("watch_count") or 0,
                 "low": scan.get("low_count") or 0,
                 "all": scan.get("passed_l1") or len(stocks),
+                "blueprint": blueprint_count,
             }
         return json.dumps(
             {"scan": scan, "stocks": stocks, "top_review": top_review, "counts": counts},
@@ -164,7 +210,8 @@ def get_screener_detail_json(symbol: str, db_path: Optional[str] = None) -> str:
         stock = db.get_screener_stock(symbol.upper())
         if not stock:
             return json.dumps({"status": "error", "message": "Not found"})
-        return json.dumps({"status": "ok", "stock": stock})
+        _ensure_blueprint_on_stock(stock, _load_blueprint_map())
+        return json.dumps({"status": "ok", "stock": stock}, default=str)
     finally:
         db.close()
 

@@ -12,7 +12,10 @@ data class ScreenerStock(
     val layer3: Layer3Result? = null,
     val manual_notes: List<String>? = null,
     val raw_columns: Map<String, Any>? = null,
-    val user_verified: Int? = null
+    val user_verified: Int? = null,
+    val blueprint_tags: List<String> = emptyList(),
+    val blueprint_match: Boolean = false,
+    val blueprint_bonus: Double? = null
 )
 
 data class ScreenerTopReview(
@@ -29,7 +32,8 @@ data class ScreenerTierCounts(
     val high: Int = 0,
     val watch: Int = 0,
     val low: Int = 0,
-    val all: Int = 0
+    val all: Int = 0,
+    val blueprint: Int = 0
 )
 
 data class ScreenerUiState(
@@ -58,4 +62,9 @@ data class ScreenerScanMeta(
 
 enum class ScreenerTierFilter {
     HIGH, WATCH, LOW, ALL
+}
+
+/** Independent of tier — AND with tier filter; does not change High/Watch/Low. */
+enum class ScreenerThemeFilter {
+    ALL, BLUEPRINT_ONLY
 }

@@ -82,6 +82,16 @@
                 android:layout_height="wrap_content"
                 android:textSize="11sp" />
 
+            <com.google.android.material.chip.Chip
+                android:id="@+id/blueprintChip"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="@string/screener_theme_blueprint"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/layer3Hint"
                 android:layout_width="wrap_content"

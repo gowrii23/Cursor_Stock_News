@@ -14,6 +14,7 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.data.ScreenerStock
 import com.bseblueprint.screener.data.ScreenerTierCounts
 import com.bseblueprint.screener.data.ScreenerTierFilter
+import com.bseblueprint.screener.data.ScreenerThemeFilter
 import com.bseblueprint.screener.data.ScreenerTopReview
 import com.bseblueprint.screener.data.ScreenerUiState
 import com.google.android.material.button.MaterialButton
@@ -39,10 +40,12 @@ class ScreenerFragment : Fragment() {
     private lateinit var chipHigh: Chip
     private lateinit var chipWatch: Chip
     private lateinit var chipLow: Chip
+    private lateinit var chipBlueprint: Chip
     private val topPickViews = mutableListOf<View>()
     private var allItems: List<ScreenerStock> = emptyList()
     private var topReview: List<ScreenerTopReview> = emptyList()
     private var currentFilter = ScreenerTierFilter.ALL
+    private var themeFilter = ScreenerThemeFilter.ALL
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
@@ -67,6 +70,7 @@ class ScreenerFragment : Fragment() {
         chipHigh = view.findViewById(R.id.chipHigh)
         chipWatch = view.findViewById(R.id.chipWatch)
         chipLow = view.findViewById(R.id.chipLow)
+        chipBlueprint = view.findViewById(R.id.chipBlueprint)
         topPickViews.add(view.findViewById(R.id.topPick1))
         topPickViews.add(view.findViewById(R.id.topPick2))
         topPickViews.add(view.findViewById(R.id.topPick3))
@@ -85,6 +89,15 @@ class ScreenerFragment : Fragment() {
                 R.id.chipWatch -> ScreenerTierFilter.WATCH
                 R.id.chipLow -> ScreenerTierFilter.LOW
                 else -> ScreenerTierFilter.ALL
+            }
+            applyFilter()
+        }
+
+        chipBlueprint.setOnCheckedChangeListener { _, isChecked ->
+            themeFilter = if (isChecked) {
+                ScreenerThemeFilter.BLUEPRINT_ONLY
+            } else {
+                ScreenerThemeFilter.ALL
             }
             applyFilter()
         }
@@ -108,6 +121,7 @@ class ScreenerFragment : Fragment() {
         chipHigh.text = getString(R.string.screener_tier_high_count, counts.high)
         chipWatch.text = getString(R.string.screener_tier_watch_count, counts.watch)
         chipLow.text = getString(R.string.screener_tier_low_count, counts.low)
+        chipBlueprint.text = getString(R.string.screener_theme_blueprint_count, counts.blueprint)
     }
 
     private fun bindTopReview(items: List<ScreenerTopReview>) {
@@ -145,12 +159,18 @@ class ScreenerFragment : Fragment() {
 
     private fun applyFilter() {
         val filtered = allItems.filter { item ->
-            when (currentFilter) {
+            val tierOk = when (currentFilter) {
                 ScreenerTierFilter.HIGH -> item.tier == "high"
                 ScreenerTierFilter.WATCH -> item.tier == "watch"
                 ScreenerTierFilter.LOW -> item.tier == "low"
                 ScreenerTierFilter.ALL -> true
             }
+            val themeOk = when (themeFilter) {
+                ScreenerThemeFilter.ALL -> true
+                ScreenerThemeFilter.BLUEPRINT_ONLY ->
+                    item.blueprint_match || item.blueprint_tags.isNotEmpty()
+            }
+            tierOk && themeOk
         }
         adapter.submit(filtered)
         val hasScan = allItems.isNotEmpty() || topReview.isNotEmpty()
@@ -158,11 +178,16 @@ class ScreenerFragment : Fragment() {
         emptyView.visibility = if (empty && hasScan) View.VISIBLE else View.GONE
         recycler.visibility = if (empty) View.GONE else View.VISIBLE
         if (empty && hasScan) {
-            emptyView.text = when (currentFilter) {
-                ScreenerTierFilter.HIGH -> getString(R.string.screener_filter_empty_high)
-                ScreenerTierFilter.WATCH -> getString(R.string.screener_filter_empty_watch)
-                ScreenerTierFilter.LOW -> getString(R.string.screener_filter_empty_low)
-                ScreenerTierFilter.ALL -> getString(R.string.screener_list_empty)
+            emptyView.text = when {
+                themeFilter == ScreenerThemeFilter.BLUEPRINT_ONLY ->
+                    getString(R.string.screener_filter_empty_blueprint)
+                currentFilter == ScreenerTierFilter.HIGH ->
+                    getString(R.string.screener_filter_empty_high)
+                currentFilter == ScreenerTierFilter.WATCH ->
+                    getString(R.string.screener_filter_empty_watch)
+                currentFilter == ScreenerTierFilter.LOW ->
+                    getString(R.string.screener_filter_empty_low)
+                else -> getString(R.string.screener_list_empty)
             }
         }
     }

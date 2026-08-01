@@ -52,6 +52,9 @@
     <string name="screener_tier_watch_count">50–69 Watch (%1$d)</string>
     <string name="screener_tier_low_count">&lt;50 Low (%1$d)</string>
     <string name="screener_tier_all_count">All L1 pass (%1$d)</string>
+    <string name="screener_theme_blueprint">Blueprint</string>
+    <string name="screener_theme_blueprint_count">Blueprint (%1$d)</string>
+    <string name="screener_filter_empty_blueprint">No Blueprint-tagged names in this tier.</string>
     <string name="screener_top_review_title">Top 3 — manual review</string>
     <string name="screener_list_empty">No stocks in this tier.</string>
     <string name="screener_filter_empty_high">No 70+ high conviction stocks this scan. Check Watch — ensure Debt/Eq, ROCE, OPM, ICR columns on screener.in.</string>

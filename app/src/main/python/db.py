@@ -57,6 +57,14 @@ class Database:
                 cur.execute("ALTER TABLE swing_hit ADD COLUMN also_screens TEXT")
             if "as_of" not in swing_hit_cols:
                 cur.execute("ALTER TABLE swing_hit ADD COLUMN as_of TEXT")
+        stock_cols = {row[1] for row in cur.execute("PRAGMA table_info(screener_stock)")}
+        if stock_cols:
+            if "blueprint_tags" not in stock_cols:
+                cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_tags TEXT")
+            if "blueprint_match" not in stock_cols:
+                cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_match INTEGER")
+            if "blueprint_bonus" not in stock_cols:
+                cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_bonus REAL")
         self.conn.commit()
 
     def _init_schema(self) -> None:
@@ -165,7 +173,10 @@ class Database:
               layer3 TEXT,
               manual_notes TEXT,
               raw_columns TEXT,
-              user_verified INTEGER DEFAULT 0
+              user_verified INTEGER DEFAULT 0,
+              blueprint_tags TEXT,
+              blueprint_match INTEGER,
+              blueprint_bonus REAL
             );
 
             CREATE TABLE IF NOT EXISTS swing_run (
@@ -533,8 +544,9 @@ class Database:
                 """
                 INSERT INTO screener_stock(
                   scan_id, symbol, name, cmp, score_total, tier, l1_passed,
-                  l1_fails, score_breakdown, layer3, manual_notes, raw_columns
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  l1_fails, score_breakdown, layer3, manual_notes, raw_columns,
+                  blueprint_tags, blueprint_match, blueprint_bonus
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scan_id,
@@ -549,6 +561,9 @@ class Database:
                     json.dumps(s.get("layer3") or {}),
                     json.dumps(s.get("manual_notes") or []),
                     json.dumps(s.get("raw") or {}),
+                    json.dumps(s.get("blueprint_tags") or []),
+                    1 if s.get("blueprint_match") else 0,
+                    float(s.get("blueprint_bonus") or 0),
                 ),
             )
         self.conn.commit()
@@ -600,6 +615,11 @@ class Database:
                     d[key] = json.loads(d.get(key) or "null")
                 except Exception:
                     d[key] = None
+            try:
+                d["blueprint_tags"] = json.loads(d.get("blueprint_tags") or "[]")
+            except Exception:
+                d["blueprint_tags"] = []
+            d["blueprint_match"] = bool(d.get("blueprint_match"))
             out.append(d)
         return out
 
@@ -625,6 +645,11 @@ class Database:
                 d[key] = json.loads(d.get(key) or "null")
             except Exception:
                 d[key] = None
+        try:
+            d["blueprint_tags"] = json.loads(d.get("blueprint_tags") or "[]")
+        except Exception:
+            d["blueprint_tags"] = []
+        d["blueprint_match"] = bool(d.get("blueprint_match"))
         return d
 
     def set_screener_verified(self, symbol: str, verified: bool) -> None:
