@@ -12,15 +12,16 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 | **News** | Cached headlines |
 | **Screener** | screener.in capture → Layer 1/2/3 pre-rating funnel (~613 stocks) |
 | **Swing** | Momentum First + Sleeping Giant screens (NSE bhavcopy, free) |
+| **Pattas** | Circle-of-competence list — peer-relative value scoring (headless + WebView) |
 
 ## Download (latest debug APK)
 
-**[Download APK v1.4.2](releases/bse-blueprint-screener-1.4.2-debug.apk)** — Screener logic tighten: incomplete ≠ L1 pass, available-points scoring, retuned tiers.
+**[Download APK v1.5.0](releases/bse-blueprint-screener-1.5.0-debug.apk)** — Pattas tab: peer-relative 4-pillar scoring, editable symbol list, PATTAS TO BE candidates.
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.4.2-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.5.0-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.
