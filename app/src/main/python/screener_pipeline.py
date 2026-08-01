@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from blueprint_tagger import load_blueprint_map, tags_for
 from db import Database
 from nse_fetch import fetch_ohlc_nse
+from pattas_engine import find_pattas_candidates
 from pipeline import _asset_path, load_json_asset
 from progress_report import report
 from screener_engine import pick_top_review, process_rows
@@ -102,6 +103,15 @@ def process_screener_capture(
             ),
         }
         db.save_screener_scan(meta, result["stocks"])
+
+        # Pattas TO BE candidates from full universe (free once screener data exists)
+        try:
+            pattas_syms = {s["symbol"] for s in db.get_pattas_symbols()}
+            raw_rows = result.get("all_rows") or result["stocks"]
+            candidates = find_pattas_candidates(raw_rows, pattas_syms, min_pillars=3)
+            db.save_pattas_candidates(candidates)
+        except Exception as e:
+            logger.warning("Pattas candidate discovery: %s", e)
 
         report(
             progress_cb,

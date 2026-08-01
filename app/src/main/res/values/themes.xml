@@ -18,6 +18,15 @@
         <item name="itemTextColor">@color/bottom_nav_item_color</item>
         <item name="itemActiveIndicatorStyle">@style/Widget.Bse.BottomNav.ActiveIndicator</item>
         <item name="labelVisibilityMode">labeled</item>
+        <item name="itemIconSize">20dp</item>
+        <item name="itemPaddingTop">4dp</item>
+        <item name="itemPaddingBottom">4dp</item>
+        <item name="itemTextAppearanceActive">@style/TextAppearance.Bse.BottomNav</item>
+        <item name="itemTextAppearanceInactive">@style/TextAppearance.Bse.BottomNav</item>
+    </style>
+
+    <style name="TextAppearance.Bse.BottomNav" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">10sp</item>
     </style>
 
     <style name="Widget.Bse.BottomNav.ActiveIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">

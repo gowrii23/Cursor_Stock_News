@@ -19,7 +19,8 @@ object PythonBridge {
         listOf(
             "universe_nifty100.json",
             "blueprint_tags.json",
-            "settings_defaults.json"
+            "settings_defaults.json",
+            "pattas_universe.json"
         ).forEach { name ->
             val dest = File(filesDir, name)
             if (!dest.exists()) {
@@ -33,6 +34,7 @@ object PythonBridge {
     private fun module() = Python.getInstance().getModule("pipeline")
     private fun screenerModule() = Python.getInstance().getModule("screener_pipeline")
     private fun swingModule() = Python.getInstance().getModule("swing_pipeline")
+    private fun pattasModule() = Python.getInstance().getModule("pattas_pipeline")
 
     fun runDailyScreen(
         useLive: Boolean = true,
@@ -121,6 +123,72 @@ object PythonBridge {
 
     fun getSwingDetail(symbol: String): JsonObject {
         val raw = swingModule().callAttr("get_swing_detail_json", symbol, dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun startPattasScan(reporter: RunProgressReporter? = null): JsonObject {
+        val raw = pattasModule().callAttr("start_pattas_scan", dbPath, reporter).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun finishPattasScanWithWebviewRows(
+        capturedRowsJson: String,
+        webviewRowsJson: String,
+        reporter: RunProgressReporter? = null
+    ): JsonObject {
+        val raw = pattasModule().callAttr(
+            "finish_pattas_scan_with_webview_rows",
+            capturedRowsJson,
+            webviewRowsJson,
+            dbPath,
+            reporter
+        ).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getPattasDashboard(): JsonObject {
+        val raw = pattasModule().callAttr("get_pattas_dashboard_json", dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getPattasDetail(symbol: String): JsonObject {
+        val raw = pattasModule().callAttr("get_pattas_detail_json", symbol, dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun setPattasMoatVerified(symbol: String, verified: Boolean): JsonObject {
+        val raw = pattasModule().callAttr(
+            "set_pattas_moat_verified_json",
+            symbol,
+            verified,
+            dbPath
+        ).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getPattasSymbolsJson(): JsonObject {
+        val raw = pattasModule().callAttr("get_pattas_symbols_json", dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun addPattasSymbol(symbol: String, name: String? = null): JsonObject {
+        val raw = pattasModule().callAttr(
+            "add_pattas_symbol_json",
+            symbol,
+            name,
+            null,
+            dbPath
+        ).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun removePattasSymbol(symbol: String): JsonObject {
+        val raw = pattasModule().callAttr("remove_pattas_symbol_json", symbol, dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getPattasCandidatesJson(): JsonObject {
+        val raw = pattasModule().callAttr("get_pattas_candidates_json", dbPath).toString()
         return JsonParser.parseString(raw).asJsonObject
     }
 }

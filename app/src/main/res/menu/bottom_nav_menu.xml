@@ -13,6 +13,10 @@
         android:icon="@drawable/ic_swing"
         android:title="@string/tab_swing" />
     <item
+        android:id="@+id/nav_pattas"
+        android:icon="@drawable/ic_pattas"
+        android:title="@string/tab_pattas" />
+    <item
         android:id="@+id/nav_screener"
         android:icon="@drawable/ic_screener"
         android:title="@string/tab_screener" />

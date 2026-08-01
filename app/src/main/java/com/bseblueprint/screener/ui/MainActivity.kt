@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.bridge.RunProgressReporter
+import com.bseblueprint.screener.data.PattasStock
 import com.bseblueprint.screener.data.ScreenerStock
 import com.bseblueprint.screener.data.SwingHit
 import com.bseblueprint.screener.data.WatchlistItem
@@ -18,6 +19,7 @@ import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,7 @@ class MainActivity : AppCompatActivity(),
     HomeFragment.Callback,
     ScreenerFragment.Callback,
     SwingFragment.Callback,
+    PattasFragment.Callback,
     RunProgressBottomSheet.Listener {
 
     private lateinit var subtitle: TextView
@@ -40,9 +43,23 @@ class MainActivity : AppCompatActivity(),
     private var newsFragment: NewsFragment? = null
     private var screenerFragment: ScreenerFragment? = null
     private var swingFragment: SwingFragment? = null
+    private var pattasFragment: PattasFragment? = null
     private var runSheet: RunProgressBottomSheet? = null
     private var screenerRunActive = false
     private var swingRunActive = false
+    private var pattasRunActive = false
+    private var pattasCapturedRowsJson: String = "[]"
+
+    private val pattasScanLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val webviewJson = result.data?.getStringExtra(PattasScanActivity.EXTRA_ROWS_JSON)
+            if (!webviewJson.isNullOrBlank()) {
+                finishPattasScanWithWebview(webviewJson)
+            }
+        }
+    }
 
     private val screenerScanLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -71,8 +88,11 @@ class MainActivity : AppCompatActivity(),
             newsFragment = NewsFragment()
             screenerFragment = ScreenerFragment()
             swingFragment = SwingFragment()
+            pattasFragment = PattasFragment()
             val fm = supportFragmentManager
             fm.beginTransaction()
+                .add(R.id.fragmentContainer, pattasFragment!!, TAG_PATTAS)
+                .hide(pattasFragment!!)
                 .add(R.id.fragmentContainer, swingFragment!!, TAG_SWING)
                 .hide(swingFragment!!)
                 .add(R.id.fragmentContainer, screenerFragment!!, TAG_SCREENER)
@@ -86,6 +106,7 @@ class MainActivity : AppCompatActivity(),
             newsFragment = supportFragmentManager.findFragmentByTag(TAG_NEWS) as? NewsFragment
             screenerFragment = supportFragmentManager.findFragmentByTag(TAG_SCREENER) as? ScreenerFragment
             swingFragment = supportFragmentManager.findFragmentByTag(TAG_SWING) as? SwingFragment
+            pattasFragment = supportFragmentManager.findFragmentByTag(TAG_PATTAS) as? PattasFragment
         }
 
         bottomNav.setOnItemSelectedListener { item ->
@@ -117,6 +138,13 @@ class MainActivity : AppCompatActivity(),
                     swingFragment?.let { onSwingLoad() }
                     true
                 }
+                R.id.nav_pattas -> {
+                    showTab(TAG_PATTAS)
+                    supportActionBar?.title = getString(R.string.tab_pattas)
+                    subtitle.visibility = View.GONE
+                    pattasFragment?.let { onPattasLoad() }
+                    true
+                }
                 else -> false
             }
         }
@@ -132,10 +160,12 @@ class MainActivity : AppCompatActivity(),
         val tab = bottomNav.selectedItemId
         val onScreener = tab == R.id.nav_screener
         val onSwing = tab == R.id.nav_swing
-        menu.findItem(R.id.action_share)?.isVisible = !onScreener && !onSwing
+        val onPattas = tab == R.id.nav_pattas
+        menu.findItem(R.id.action_share)?.isVisible = !onScreener && !onSwing && !onPattas
         menu.findItem(R.id.action_run)?.title = when {
             onScreener -> getString(R.string.screener_run_scan)
             onSwing -> getString(R.string.swing_run)
+            onPattas -> getString(R.string.pattas_run_scan)
             else -> getString(R.string.action_run_screen)
         }
         return super.onPrepareOptionsMenu(menu)
@@ -151,6 +181,7 @@ class MainActivity : AppCompatActivity(),
                 when (bottomNav.selectedItemId) {
                     R.id.nav_screener -> startScreenerScan()
                     R.id.nav_swing -> startSwingRun()
+                    R.id.nav_pattas -> startPattasScan()
                     else -> startRunWithProgress()
                 }
                 true
@@ -168,13 +199,15 @@ class MainActivity : AppCompatActivity(),
         val news = newsFragment ?: return
         val screener = screenerFragment ?: return
         val swing = swingFragment ?: return
+        val pattas = pattasFragment ?: return
         val tx = supportFragmentManager.beginTransaction()
-        tx.hide(home).hide(news).hide(screener).hide(swing)
+        tx.hide(home).hide(news).hide(screener).hide(swing).hide(pattas)
         when (tag) {
             TAG_HOME -> tx.show(home)
             TAG_NEWS -> tx.show(news)
             TAG_SCREENER -> tx.show(screener)
             TAG_SWING -> tx.show(swing)
+            TAG_PATTAS -> tx.show(pattas)
         }
         tx.commit()
     }
@@ -222,9 +255,46 @@ class MainActivity : AppCompatActivity(),
 
     override fun onSwingLoad() = loadSwing()
 
+    override fun onPattasRunScan() = startPattasScan()
+
+    override fun onPattasStockClick(stock: PattasStock) {
+        startActivity(
+            Intent(this, PattasDetailActivity::class.java)
+                .putExtra(PattasDetailActivity.EXTRA_SYMBOL, stock.symbol)
+        )
+    }
+
+    override fun onPattasLoad() = loadPattas()
+
+    override fun onPattasManageList() {
+        startActivity(Intent(this, PattasManageActivity::class.java))
+    }
+
+    override fun onPattasAddCandidate(stock: PattasStock) {
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    PythonBridge.addPattasSymbol(stock.symbol, stock.name)
+                }
+                Toast.makeText(
+                    this@MainActivity,
+                    "${stock.symbol} added to Pattas list",
+                    Toast.LENGTH_SHORT
+                ).show()
+                loadPattas()
+            } catch (t: Throwable) {
+                Toast.makeText(this@MainActivity, t.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     override fun onRunDismissed() {
         runSheet = null
         when {
+            bottomNav.selectedItemId == R.id.nav_pattas || pattasRunActive -> {
+                pattasRunActive = false
+                loadPattas()
+            }
             bottomNav.selectedItemId == R.id.nav_swing || swingRunActive -> {
                 swingRunActive = false
                 loadSwing()
@@ -238,6 +308,99 @@ class MainActivity : AppCompatActivity(),
                 newsFragment?.loadNews()
             }
         }
+    }
+
+    private fun startPattasScan() {
+        pattasRunActive = true
+        val sheet = RunProgressBottomSheet.newInstance(getString(R.string.pattas_progress_title)).also {
+            it.listener = this
+            runSheet = it
+        }
+        sheet.show(supportFragmentManager, RunProgressBottomSheet.TAG)
+
+        lifecycleScope.launch {
+            try {
+                val reporter = RunProgressReporter { percent, message ->
+                    runSheet?.updateProgress(percent, message)
+                }
+                val result = withContext(Dispatchers.IO) {
+                    PythonBridge.startPattasScan(reporter)
+                }
+                val status = JsonSafe.string(result, "status") ?: "error"
+                when (status) {
+                    "needs_webview" -> {
+                        val capturedArr = JsonSafe.arr(result, "captured_rows")
+                        pattasCapturedRowsJson = capturedArr?.toString() ?: "[]"
+                        val failedArr = JsonSafe.arr(result, "failed_symbols")
+                        val failed = jsonArrayToStringList(failedArr)
+                        if (failed.isEmpty()) {
+                            runSheet?.markComplete(false, "WebView fallback requested but no symbols listed")
+                        } else {
+                            runSheet?.dismissAllowingStateLoss()
+                            runSheet = null
+                            pattasScanLauncher.launch(
+                                Intent(this@MainActivity, PattasScanActivity::class.java)
+                                    .putStringArrayListExtra(
+                                        PattasScanActivity.EXTRA_SYMBOLS,
+                                        ArrayList(failed)
+                                    )
+                            )
+                        }
+                    }
+                    "ok" -> {
+                        val count = JsonSafe.int(result, "count") ?: 0
+                        runSheet?.markComplete(true, "Done — $count Pattas stocks scored")
+                        loadPattas()
+                    }
+                    else -> {
+                        runSheet?.markComplete(
+                            false,
+                            JsonSafe.string(result, "message") ?: "Pattas scan failed"
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                runSheet?.markComplete(false, "Pattas scan failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun finishPattasScanWithWebview(webviewJson: String) {
+        pattasRunActive = true
+        val sheet = RunProgressBottomSheet.newInstance(getString(R.string.pattas_progress_title)).also {
+            it.listener = this
+            runSheet = it
+        }
+        sheet.show(supportFragmentManager, RunProgressBottomSheet.TAG)
+
+        lifecycleScope.launch {
+            try {
+                val reporter = RunProgressReporter { percent, message ->
+                    runSheet?.updateProgress(percent, message)
+                }
+                val result = withContext(Dispatchers.IO) {
+                    PythonBridge.finishPattasScanWithWebviewRows(
+                        pattasCapturedRowsJson,
+                        webviewJson,
+                        reporter
+                    )
+                }
+                val status = JsonSafe.string(result, "status") ?: "error"
+                val count = JsonSafe.int(result, "count") ?: 0
+                val success = status == "ok"
+                runSheet?.markComplete(success, "Done — $count Pattas stocks scored")
+                if (success) {
+                    loadPattas()
+                }
+            } catch (t: Throwable) {
+                runSheet?.markComplete(false, "Pattas scan failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun jsonArrayToStringList(arr: JsonArray?): List<String> {
+        if (arr == null) return emptyList()
+        return (0 until arr.size()).mapNotNull { JsonSafe.string(arr[it])?.uppercase() }
     }
 
     private fun startScreenerScan() {
@@ -315,6 +478,31 @@ class MainActivity : AppCompatActivity(),
                 }
             } catch (t: Throwable) {
                 runSheet?.markComplete(false, "Swing screen failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun loadPattas() {
+        pattasFragment?.setLoading(true)
+        lifecycleScope.launch {
+            try {
+                val dash = withContext(Dispatchers.IO) { PythonBridge.getPattasDashboard() }
+                val state = PattasJsonParser.parseDashboard(
+                    dash,
+                    getString(R.string.pattas_empty)
+                )
+                val scan = JsonSafe.obj(dash, "scan")
+                val at = JsonSafe.string(scan, "scanned_at")
+                val meta = if (!at.isNullOrBlank()) {
+                    "${state.metaLine} · ${formatIstTime(at)}"
+                } else {
+                    state.metaLine
+                }
+                pattasFragment?.bindState(state.copy(metaLine = meta))
+            } catch (t: Throwable) {
+                Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                pattasFragment?.setLoading(false)
             }
         }
     }
@@ -521,5 +709,6 @@ class MainActivity : AppCompatActivity(),
         private const val TAG_NEWS = "news"
         private const val TAG_SCREENER = "screener"
         private const val TAG_SWING = "swing"
+        private const val TAG_PATTAS = "pattas"
     }
 }
