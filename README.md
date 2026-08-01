@@ -8,7 +8,7 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 
 | Tab | Purpose |
 |-----|---------|
-| **Home** | Idiosyncratic drop + news severity (Nifty 100) |
+| **Flags** | Idiosyncratic drop + news severity (Nifty 100) |
 | **News** | Cached headlines |
 | **Screener** | screener.in capture → Layer 1/2/3 pre-rating funnel (~613 stocks) |
 | **Swing** | Momentum First + Sleeping Giant screens (NSE bhavcopy, free) |
@@ -16,12 +16,12 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 
 ## Download (latest debug APK)
 
-**[Download APK v1.5.2](releases/bse-blueprint-screener-1.5.2-debug.apk)** — Pattas scan skips 404 tickers; broader ratio extraction for logged-in pages.
+**[Download APK v1.5.3](releases/bse-blueprint-screener-1.5.3-debug.apk)** — Fix Flags tab showing [TEST] after live EOD run; tab renamed from Home to Flags.
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.5.2-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.5.3-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.

@@ -197,6 +197,7 @@ def run_daily_screen(
                         f"bhavcopy={price_health.get('bhavcopy', 'fail')} "
                         f"reason=insufficient_prices"
                     )
+                    db.purge_demo_watchlist()
                     db.log_run(started, finished, "partial", msg, len(cached))
                     return json.dumps(
                         {
@@ -224,6 +225,7 @@ def run_daily_screen(
             if cached:
                 finished = datetime.utcnow().isoformat()
                 msg = f"mode=cached universe={len(tickers)} flagged={len(cached)} bhavcopy=fail"
+                db.purge_demo_watchlist()
                 db.log_run(started, finished, "partial", msg, len(cached))
                 return json.dumps(
                     {
@@ -389,6 +391,8 @@ def run_daily_screen(
         # Sort by conviction
         watch_rows.sort(key=lambda r: r.get("conviction_score") or -999, reverse=True)
         db.replace_watchlist_for_date(asof_date, watch_rows)
+        if watch_rows:
+            db.purge_demo_watchlist()
 
         # Persist news (matched + severity)
         flat_news = []

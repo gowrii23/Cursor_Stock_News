@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity(),
     private var swingRunActive = false
     private var pattasRunActive = false
     private var pattasCapturedRowsJson: String = "[]"
+    private var pendingWatchlist: List<WatchlistItem>? = null
 
     private val pattasScanLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -127,7 +128,7 @@ class MainActivity : AppCompatActivity(),
             when (item.itemId) {
                 R.id.nav_home -> {
                     showTab(TAG_HOME)
-                    supportActionBar?.title = getString(R.string.tab_home)
+                    supportActionBar?.title = getString(R.string.tab_flags)
                     subtitle.visibility = View.VISIBLE
                     true
                 }
@@ -244,7 +245,7 @@ class MainActivity : AppCompatActivity(),
 
     override fun onRefreshRequested() = startRunWithProgress()
 
-    override fun onLoadDashboard(seedIfEmpty: Boolean) = loadDashboard(seedIfEmpty)
+    override fun onLoadDashboard() = loadDashboard()
 
     // --- Screener callbacks ---
     override fun onScreenerRunScan() = startScreenerScan()
@@ -318,7 +319,21 @@ class MainActivity : AppCompatActivity(),
                 loadScreener()
             }
             else -> {
-                loadDashboard(seedIfEmpty = false)
+                val pending = pendingWatchlist
+                pendingWatchlist = null
+                if (pending != null) {
+                    lifecycleScope.launch {
+                        try {
+                            val dash = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
+                            updateSubtitle(dash, pending)
+                            homeFragment?.bindItems(pending)
+                        } catch (_: Throwable) {
+                            homeFragment?.bindItems(pending)
+                        }
+                    }
+                } else {
+                    loadDashboard()
+                }
                 newsFragment?.loadNews()
             }
         }
@@ -553,27 +568,16 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    private fun loadDashboard(seedIfEmpty: Boolean) {
+    private fun loadDashboard() {
         homeFragment?.setLoading(true)
         lifecycleScope.launch {
             try {
                 val dash = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
                 val type = object : TypeToken<List<WatchlistItem>>() {}.type
                 val arr = JsonSafe.arr(dash, "watchlist")
-                var items: List<WatchlistItem> =
+                val items: List<WatchlistItem> =
                     if (arr != null) gson.fromJson(arr, type) ?: emptyList() else emptyList()
-                if (items.isEmpty() && seedIfEmpty) {
-                    subtitle.text = "Seeding demo screen…"
-                    withContext(Dispatchers.IO) {
-                        PythonBridge.runDailyScreen(useLive = false, forceDemo = true)
-                    }
-                    val dash2 = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
-                    val arr2 = JsonSafe.arr(dash2, "watchlist")
-                    items = if (arr2 != null) gson.fromJson(arr2, type) ?: emptyList() else emptyList()
-                    updateSubtitle(dash2, items)
-                } else {
-                    updateSubtitle(dash, items)
-                }
+                updateSubtitle(dash, items)
                 homeFragment?.bindItems(items)
             } catch (t: Throwable) {
                 Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
@@ -589,7 +593,7 @@ class MainActivity : AppCompatActivity(),
         if (bottomNav.selectedItemId != R.id.nav_home) {
             bottomNav.selectedItemId = R.id.nav_home
             showTab(TAG_HOME)
-            supportActionBar?.title = getString(R.string.tab_home)
+            supportActionBar?.title = getString(R.string.tab_flags)
             subtitle.visibility = View.VISIBLE
         }
 
@@ -611,6 +615,13 @@ class MainActivity : AppCompatActivity(),
                 val flagged = JsonSafe.int(result, "flagged_count") ?: 0
                 val status = JsonSafe.string(result, "status") ?: "error"
                 val success = status == "ok" || status == "partial"
+                val watchArr = JsonSafe.arr(result, "watchlist")
+                if (watchArr != null && watchArr.size() > 0) {
+                    val type = object : TypeToken<List<WatchlistItem>>() {}.type
+                    pendingWatchlist = gson.fromJson(watchArr, type)
+                } else {
+                    pendingWatchlist = null
+                }
                 runSheet?.markComplete(success, "Finished ($mode): $flagged flag(s)")
             } catch (t: Throwable) {
                 runSheet?.markComplete(false, "Run failed: ${t.message}")

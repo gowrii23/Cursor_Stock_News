@@ -355,21 +355,45 @@ class Database:
             )
         self.conn.commit()
 
+    def purge_demo_watchlist(self) -> None:
+        """Remove synthetic [TEST] rows so they never shadow a real EOD screen."""
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM watchlist WHERE ticker = ?", ("[TEST]",))
+        cur.execute("DELETE FROM news_cache WHERE ticker = ?", ("[TEST]",))
+        self.conn.commit()
+
+    def _best_watchlist_date(self) -> Optional[str]:
+        """Latest date with real flags; demo-only dates are skipped when possible."""
+        cur = self.conn.cursor()
+        dates = [
+            r["d"]
+            for r in cur.execute(
+                "SELECT DISTINCT date AS d FROM watchlist ORDER BY date DESC"
+            ).fetchall()
+        ]
+        if not dates:
+            return None
+        for d in dates:
+            row = cur.execute(
+                "SELECT COUNT(*) AS c FROM watchlist WHERE date = ? AND ticker != ?",
+                (d, "[TEST]"),
+            ).fetchone()
+            if row and row["c"] > 0:
+                return d
+        return dates[0]
+
     def get_watchlist(self, date: Optional[str] = None) -> List[Dict[str, Any]]:
         cur = self.conn.cursor()
         if date:
-            rows = cur.execute(
-                "SELECT * FROM watchlist WHERE date = ? ORDER BY conviction_score DESC",
-                (date,),
-            ).fetchall()
+            target_date = date
         else:
-            latest = cur.execute("SELECT MAX(date) AS d FROM watchlist").fetchone()
-            if not latest or not latest["d"]:
+            target_date = self._best_watchlist_date()
+            if not target_date:
                 return []
-            rows = cur.execute(
-                "SELECT * FROM watchlist WHERE date = ? ORDER BY conviction_score DESC",
-                (latest["d"],),
-            ).fetchall()
+        rows = cur.execute(
+            "SELECT * FROM watchlist WHERE date = ? ORDER BY conviction_score DESC",
+            (target_date,),
+        ).fetchall()
         out = []
         for r in rows:
             d = dict(r)

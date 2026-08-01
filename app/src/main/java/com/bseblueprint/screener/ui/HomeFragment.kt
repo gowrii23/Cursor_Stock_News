@@ -23,7 +23,7 @@ class HomeFragment : Fragment() {
         fun onWatchlistItemClick(item: WatchlistItem)
         fun onWatchlistItemShare(item: WatchlistItem)
         fun onRefreshRequested()
-        fun onLoadDashboard(seedIfEmpty: Boolean)
+        fun onLoadDashboard()
     }
 
     private var callback: Callback? = null
@@ -76,7 +76,7 @@ class HomeFragment : Fragment() {
         view.findViewById<Chip>(R.id.chipActionable).isChecked = true
 
         if (savedInstanceState == null) {
-            callback?.onLoadDashboard(seedIfEmpty = true)
+            callback?.onLoadDashboard()
         }
     }
 
