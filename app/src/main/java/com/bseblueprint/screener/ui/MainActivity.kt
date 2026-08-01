@@ -12,8 +12,8 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.bridge.RunProgressReporter
 import com.bseblueprint.screener.data.ScreenerStock
-import com.bseblueprint.screener.data.ScreenerUiState
 import com.bseblueprint.screener.data.WatchlistItem
+import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.gson.Gson
@@ -219,11 +219,11 @@ class MainActivity : AppCompatActivity(),
                 val result = withContext(Dispatchers.IO) {
                     PythonBridge.processScreenerCapture(rowsJson, reporter)
                 }
-                val status = result.get("status")?.asString ?: "error"
-                val high = result.get("high_count")?.asInt ?: 0
-                val watch = result.get("watch_count")?.asInt ?: 0
-                val low = result.get("low_count")?.asInt ?: 0
-                val l1 = result.get("passed_l1")?.asInt ?: 0
+                val status = JsonSafe.string(result, "status") ?: "error"
+                val high = JsonSafe.int(result, "high_count") ?: 0
+                val watch = JsonSafe.int(result, "watch_count") ?: 0
+                val low = JsonSafe.int(result, "low_count") ?: 0
+                val l1 = JsonSafe.int(result, "passed_l1") ?: 0
                 val success = status == "ok"
                 runSheet?.markComplete(
                     success,
@@ -247,13 +247,10 @@ class MainActivity : AppCompatActivity(),
                     dash,
                     getString(R.string.screener_empty)
                 )
-                val meta = if (dash.get("scan")?.isJsonObject == true) {
-                    val at = dash.getAsJsonObject("scan").get("scanned_at")?.asString
-                    if (!at.isNullOrBlank()) {
-                        "${state.metaLine} · ${formatIstTime(at)}"
-                    } else {
-                        state.metaLine
-                    }
+                val scan = JsonSafe.obj(dash, "scan")
+                val at = JsonSafe.string(scan, "scanned_at")
+                val meta = if (!at.isNullOrBlank()) {
+                    "${state.metaLine} · ${formatIstTime(at)}"
                 } else {
                     state.metaLine
                 }
@@ -271,16 +268,18 @@ class MainActivity : AppCompatActivity(),
         lifecycleScope.launch {
             try {
                 val dash = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
-                val arr = dash.getAsJsonArray("watchlist")
                 val type = object : TypeToken<List<WatchlistItem>>() {}.type
-                var items: List<WatchlistItem> = gson.fromJson(arr, type) ?: emptyList()
+                val arr = JsonSafe.arr(dash, "watchlist")
+                var items: List<WatchlistItem> =
+                    if (arr != null) gson.fromJson(arr, type) ?: emptyList() else emptyList()
                 if (items.isEmpty() && seedIfEmpty) {
                     subtitle.text = "Seeding demo screen…"
                     withContext(Dispatchers.IO) {
                         PythonBridge.runDailyScreen(useLive = false, forceDemo = true)
                     }
                     val dash2 = withContext(Dispatchers.IO) { PythonBridge.getDashboard() }
-                    items = gson.fromJson(dash2.getAsJsonArray("watchlist"), type) ?: emptyList()
+                    val arr2 = JsonSafe.arr(dash2, "watchlist")
+                    items = if (arr2 != null) gson.fromJson(arr2, type) ?: emptyList() else emptyList()
                     updateSubtitle(dash2, items)
                 } else {
                     updateSubtitle(dash, items)
@@ -318,9 +317,9 @@ class MainActivity : AppCompatActivity(),
                 val result = withContext(Dispatchers.IO) {
                     PythonBridge.runDailyScreen(useLive = true, forceDemo = false, reporter = reporter)
                 }
-                val mode = result.get("mode")?.asString ?: "?"
-                val flagged = result.get("flagged_count")?.asInt ?: 0
-                val status = result.get("status")?.asString ?: "error"
+                val mode = JsonSafe.string(result, "mode") ?: "?"
+                val flagged = JsonSafe.int(result, "flagged_count") ?: 0
+                val status = JsonSafe.string(result, "status") ?: "error"
                 val success = status == "ok" || status == "partial"
                 runSheet?.markComplete(success, "Finished ($mode): $flagged flag(s)")
             } catch (t: Throwable) {
@@ -330,23 +329,23 @@ class MainActivity : AppCompatActivity(),
     }
 
     private fun updateSubtitle(dash: JsonObject, items: List<WatchlistItem>) {
-        val run = dash.getAsJsonObject("latest_run")
-        val health = dash.getAsJsonObject("data_health")
-        val mode = health?.get("mode")?.asString
-            ?: run?.get("message")?.asString?.let { parseMode(it) }
+        val run = JsonSafe.obj(dash, "latest_run")
+        val health = JsonSafe.obj(dash, "data_health")
+        val mode = JsonSafe.string(health, "mode")
+            ?: JsonSafe.string(run, "message")?.let { parseMode(it) }
             ?: "demo"
         val actionable = items.count { it.severity_tag == "CANDIDATE" }
         val date = items.firstOrNull()?.date ?: "—"
-        val finished = formatIstTime(run?.get("finished_at")?.asString)
+        val finished = formatIstTime(JsonSafe.string(run, "finished_at"))
         val modeLabel = when (mode) {
             "live" -> getString(R.string.subtitle_live_news)
             "cached" -> "Cached run · showing last good screen"
             else -> getString(R.string.subtitle_demo_news)
         }
-        val bhavcopy = healthLabel(health?.get("bhavcopy")?.asString)
-        val pulse = healthLabel(health?.get("pulse")?.asString)
-        val nse = healthLabel(health?.get("nse")?.asString)
-        val gnews = healthLabel(health?.get("gnews")?.asString)
+        val bhavcopy = healthLabel(JsonSafe.string(health, "bhavcopy"))
+        val pulse = healthLabel(JsonSafe.string(health, "pulse"))
+        val nse = healthLabel(JsonSafe.string(health, "nse"))
+        val gnews = healthLabel(JsonSafe.string(health, "gnews"))
         subtitle.text = "$modeLabel · $finished · $actionable actionable · $date · " +
             "${getString(R.string.health_bhavcopy)} $bhavcopy · " +
             "${getString(R.string.health_pulse)} $pulse · " +

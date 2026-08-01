@@ -12,6 +12,7 @@ import com.bseblueprint.screener.data.MetricPoint
 import com.bseblueprint.screener.data.NewsItem
 import com.bseblueprint.screener.data.ScoreBreakdown
 import com.bseblueprint.screener.data.WatchlistItem
+import com.bseblueprint.screener.util.JsonSafe
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
@@ -66,28 +67,37 @@ class StockDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val detail = withContext(Dispatchers.IO) { PythonBridge.getStockDetail(ticker) }
-                val meta = detail.getAsJsonObject("meta")
-                val name = meta?.get("name")?.asString ?: ticker
-                val membership = meta?.get("index_membership")?.asString ?: ""
+                val meta = JsonSafe.obj(detail, "meta")
+                val name = JsonSafe.string(meta, "name") ?: ticker
+                val membership = JsonSafe.string(meta, "index_membership") ?: ""
                 txtMeta.text = "$name · $membership"
 
                 val tagsType = object : TypeToken<List<String>>() {}.type
-                val tags: List<String> = gson.fromJson(detail.getAsJsonArray("blueprint_tags"), tagsType) ?: emptyList()
+                val tagsArr = JsonSafe.arr(detail, "blueprint_tags")
+                val tags: List<String> =
+                    if (tagsArr != null) gson.fromJson(tagsArr, tagsType) ?: emptyList() else emptyList()
                 txtTags.text = if (tags.isEmpty()) "No personal theme tags" else tags.joinToString(" · ")
 
                 val breakdownType = object : TypeToken<ScoreBreakdown>() {}.type
+                val breakdownEl = detail.get("score_breakdown")
                 val breakdown: ScoreBreakdown? =
-                    gson.fromJson(detail.get("score_breakdown"), breakdownType)
+                    if (breakdownEl != null && !breakdownEl.isJsonNull) {
+                        gson.fromJson(breakdownEl, breakdownType)
+                    } else {
+                        null
+                    }
                 txtScoreBreakdown.text = formatBreakdown(breakdown)
 
                 val metricsType = object : TypeToken<List<MetricPoint>>() {}.type
+                val metricsArr = JsonSafe.arr(detail, "metrics")
                 val metrics: List<MetricPoint> =
-                    gson.fromJson(detail.getAsJsonArray("metrics"), metricsType) ?: emptyList()
+                    if (metricsArr != null) gson.fromJson(metricsArr, metricsType) ?: emptyList() else emptyList()
                 bindChart(chart, metrics)
 
                 val histType = object : TypeToken<List<WatchlistItem>>() {}.type
+                val histArr = JsonSafe.arr(detail, "watch_history")
                 val hist: List<WatchlistItem> =
-                    gson.fromJson(detail.getAsJsonArray("watch_history"), histType) ?: emptyList()
+                    if (histArr != null) gson.fromJson(histArr, histType) ?: emptyList() else emptyList()
                 txtHistory.text = if (hist.isEmpty()) {
                     "No prior idiosyncratic flags"
                 } else {
@@ -97,8 +107,9 @@ class StockDetailActivity : AppCompatActivity() {
                 }
 
                 val newsType = object : TypeToken<List<NewsItem>>() {}.type
+                val newsArr = JsonSafe.arr(detail, "news")
                 val news: List<NewsItem> =
-                    gson.fromJson(detail.getAsJsonArray("news"), newsType) ?: emptyList()
+                    if (newsArr != null) gson.fromJson(newsArr, newsType) ?: emptyList() else emptyList()
                 txtNews.text = if (news.isEmpty()) {
                     "No matched headlines"
                 } else {

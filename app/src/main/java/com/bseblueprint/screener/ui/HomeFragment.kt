@@ -110,6 +110,7 @@ class HomeFragment : Fragment() {
     fun showEmpty() {
         allItems = emptyList()
         adapter.submit(emptyList())
+        emptyView.text = getString(R.string.watchlist_empty)
         emptyView.visibility = View.VISIBLE
         recycler.visibility = View.GONE
     }

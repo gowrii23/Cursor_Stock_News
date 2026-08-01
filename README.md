@@ -14,12 +14,12 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 
 ## Download (latest debug APK)
 
-**[Download APK v1.3.2](releases/bse-blueprint-screener-1.3.2-debug.apk)** — Screener tab fixes: reload after scan, top-3 manual review, tier counts.
+**[Download APK v1.3.3](releases/bse-blueprint-screener-1.3.3-debug.apk)** — Null-safe JSON loads (fixes “Load failed: JsonNull”), same UX as 1.3.2.
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.3.2-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.3.3-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.

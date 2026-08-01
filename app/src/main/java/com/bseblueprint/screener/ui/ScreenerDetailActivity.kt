@@ -6,9 +6,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
+import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.checkbox.MaterialCheckBox
-import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 
 class ScreenerDetailActivity : AppCompatActivity() {
 
-    private val gson = Gson()
     private var symbol: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,48 +46,52 @@ class ScreenerDetailActivity : AppCompatActivity() {
     }
 
     private fun bindDetail(json: JsonObject) {
-        val stockElem = json.get("stock")
-        if (stockElem == null || !stockElem.isJsonObject) return
-        val stock = stockElem.asJsonObject
-        findViewById<TextView>(R.id.detailSymbol).text = stock.get("symbol")?.asString
-        findViewById<TextView>(R.id.detailName).text = stock.get("name")?.asString
-        val score = stock.get("score_total")?.asDouble ?: 0.0
-        val tier = stock.get("tier")?.asString ?: ""
+        val stock = JsonSafe.obj(json, "stock") ?: return
+        findViewById<TextView>(R.id.detailSymbol).text =
+            JsonSafe.string(stock, "symbol") ?: symbol
+        findViewById<TextView>(R.id.detailName).text =
+            JsonSafe.string(stock, "name") ?: "—"
+        val score = JsonSafe.double(stock, "score_total") ?: 0.0
+        val tier = JsonSafe.string(stock, "tier") ?: ""
         findViewById<TextView>(R.id.detailScore).text =
             "${String.format("%.0f", score)}/100 · $tier"
 
-        val breakdownElem = stock.get("score_breakdown")
-        val breakdown = if (breakdownElem != null && breakdownElem.isJsonObject) breakdownElem.asJsonObject else null
+        val breakdown = JsonSafe.obj(stock, "score_breakdown")
         val bdLines = breakdown?.entrySet()?.joinToString("\n") {
-            "  ${it.key}: ${String.format("%.1f", it.value.asDouble)}"
+            val v = JsonSafe.double(it.value) ?: 0.0
+            "  ${it.key}: ${String.format("%.1f", v)}"
         } ?: "—"
         findViewById<TextView>(R.id.detailBreakdown).text = bdLines
 
-        val l3Elem = stock.get("layer3")
-        val l3 = if (l3Elem != null && l3Elem.isJsonObject) l3Elem.asJsonObject else null
-        val signals = l3?.getAsJsonArray("signals")
+        val l3 = JsonSafe.obj(stock, "layer3")
+        val signals = JsonSafe.arr(l3, "signals")
         val l3Text = if (signals != null && signals.size() > 0) {
-            (0 until signals.size()).joinToString("\n") { "• ${signals[it].asString}" }
+            (0 until signals.size()).mapNotNull { JsonSafe.string(signals[it]) }
+                .joinToString("\n") { "• $it" }
+                .ifBlank { getString(R.string.screener_layer3_none) }
         } else {
             getString(R.string.screener_layer3_none)
         }
         findViewById<TextView>(R.id.detailLayer3).text = l3Text
 
-        val manual = stock.getAsJsonArray("manual_notes")
+        val manual = JsonSafe.arr(stock, "manual_notes")
         val manualText = if (manual != null && manual.size() > 0) {
-            (0 until manual.size()).joinToString("\n") { "☐ ${manual[it].asString}" }
-        } else "—"
+            (0 until manual.size()).mapNotNull { JsonSafe.string(manual[it]) }
+                .joinToString("\n") { "☐ $it" }
+                .ifBlank { "—" }
+        } else {
+            "—"
+        }
         findViewById<TextView>(R.id.detailManual).text = manualText
 
-        val rawElem = stock.get("raw_columns")
-        val raw = if (rawElem != null && rawElem.isJsonObject) rawElem.asJsonObject else null
+        val raw = JsonSafe.obj(stock, "raw_columns")
         val rawText = raw?.entrySet()?.joinToString("\n") {
             "${it.key}: ${it.value}"
         } ?: "—"
         findViewById<TextView>(R.id.detailRaw).text = rawText
 
         val check = findViewById<MaterialCheckBox>(R.id.checkVerified)
-        check.isChecked = stock.get("user_verified")?.asInt == 1
+        check.isChecked = (JsonSafe.int(stock, "user_verified") ?: 0) == 1
         check.setOnCheckedChangeListener { _, isChecked ->
             lifecycleScope.launch(Dispatchers.IO) {
                 PythonBridge.setScreenerVerified(symbol, isChecked)
