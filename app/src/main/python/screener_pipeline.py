@@ -101,8 +101,8 @@ def get_screener_dashboard_json(db_path: Optional[str] = None) -> str:
     db = Database(db_path)
     try:
         scan = db.latest_screener_scan()
-        stocks = db.get_screener_stocks()
-        return json.dumps({"scan": scan, "stocks": stocks})
+        stocks = db.get_screener_stocks() if scan else []
+        return json.dumps({"scan": scan, "stocks": stocks}, default=str)
     finally:
         db.close()
 
