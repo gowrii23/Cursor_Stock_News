@@ -82,10 +82,10 @@ class PattasAdapter(
                 return "$mark $label $valStr vs $medStr"
             }
             return listOf(
-                line("PE", "pe", true),
-                line("Div%", "div_yield", false),
-                line("D/E", "debt_eq", true),
-                line("ROE3y", "roe_3y", false)
+                line("PE", "pe"),
+                line("Div%", "div_yield"),
+                line("D/E", "debt_eq"),
+                line("ROE3y", "roe_3y")
             ).joinToString("\n")
         }
     }
