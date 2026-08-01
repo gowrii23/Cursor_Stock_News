@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
+import com.bseblueprint.screener.util.JsonSafe
 import com.bseblueprint.screener.work.DailyScreenScheduler
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -44,13 +45,20 @@ class SettingsActivity : AppCompatActivity() {
                 edtZ.setText(jsonNumber(settings, "z_threshold", "-1.5"))
                 edtMinIdio.setText(jsonNumber(settings, "min_idio_return", "-0.015"))
                 edtBeta.setText(jsonNumber(settings, "beta_low_threshold", "0.8"))
-                val excl = settings.getAsJsonArray("exclude_keywords")
-                    ?.joinToString("\n") { it.asString } ?: ""
-                val cand = settings.getAsJsonArray("candidate_keywords")
-                    ?.joinToString("\n") { it.asString } ?: ""
+                val excl = JsonSafe.arr(settings, "exclude_keywords")
+                    ?.mapNotNull { JsonSafe.string(it) }
+                    ?.joinToString("\n")
+                    ?: ""
+                val cand = JsonSafe.arr(settings, "candidate_keywords")
+                    ?.mapNotNull { JsonSafe.string(it) }
+                    ?.joinToString("\n")
+                    ?: ""
                 edtExclude.setText(excl)
                 edtCandidate.setText(cand)
-                edtBlueprint.setText(settings.get("blueprint_tags")?.toString() ?: "{}")
+                val bp = settings.get("blueprint_tags")
+                edtBlueprint.setText(
+                    if (bp != null && !bp.isJsonNull) bp.toString() else "{}"
+                )
                 swWifi.isChecked = jsonBool(settings, "require_wifi", true)
                 swCharge.isChecked = jsonBool(settings, "require_charging", false)
             } catch (t: Throwable) {
@@ -76,7 +84,11 @@ class SettingsActivity : AppCompatActivity() {
                             .asJsonObject
                             .entrySet()
                             .associate { (k, v) ->
-                                k to v.asJsonArray.map { it.asString }
+                                k to (if (v.isJsonArray) {
+                                    v.asJsonArray.mapNotNull { JsonSafe.string(it) }
+                                } else {
+                                    emptyList()
+                                })
                             }
                     )
                     withContext(Dispatchers.IO) { PythonBridge.saveSettings(payload) }
@@ -107,7 +119,7 @@ class SettingsActivity : AppCompatActivity() {
         return when {
             el.isJsonNull -> fallback
             el.isJsonPrimitive && el.asJsonPrimitive.isNumber -> el.asNumber.toString()
-            el.isJsonPrimitive -> el.asString
+            el.isJsonPrimitive -> JsonSafe.string(el) ?: fallback
             else -> fallback
         }
     }
@@ -116,13 +128,5 @@ class SettingsActivity : AppCompatActivity() {
         obj: com.google.gson.JsonObject,
         key: String,
         fallback: Boolean
-    ): Boolean {
-        val el = obj.get(key) ?: return fallback
-        return when {
-            el.isJsonNull -> fallback
-            el.isJsonPrimitive && el.asJsonPrimitive.isBoolean -> el.asBoolean
-            el.isJsonPrimitive && el.asJsonPrimitive.isString -> el.asString.toBoolean()
-            else -> fallback
-        }
-    }
+    ): Boolean = JsonSafe.bool(obj, key) ?: fallback
 }

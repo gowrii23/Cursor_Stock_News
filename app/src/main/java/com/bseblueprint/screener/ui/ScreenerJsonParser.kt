@@ -5,6 +5,7 @@ import com.bseblueprint.screener.data.ScreenerStock
 import com.bseblueprint.screener.data.ScreenerTierCounts
 import com.bseblueprint.screener.data.ScreenerTopReview
 import com.bseblueprint.screener.data.ScreenerUiState
+import com.bseblueprint.screener.util.JsonSafe
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -12,18 +13,16 @@ import com.google.gson.JsonObject
 object ScreenerJsonParser {
 
     fun parseDashboard(dash: JsonObject, emptyMeta: String): ScreenerUiState {
-        val scan = dash.get("scan")?.takeIf { it.isJsonObject }?.asJsonObject
-        val stocks = dash.get("stocks")?.takeIf { it.isJsonArray }?.asJsonArray
-            ?.let { parseStocks(it) } ?: emptyList()
-        val topReview = dash.get("top_review")?.takeIf { it.isJsonArray }?.asJsonArray
-            ?.let { parseTopReview(it) } ?: emptyList()
-        val countsElem = dash.get("counts")?.takeIf { it.isJsonObject }?.asJsonObject
+        val scan = JsonSafe.obj(dash, "scan")
+        val stocks = JsonSafe.arr(dash, "stocks")?.let { parseStocks(it) } ?: emptyList()
+        val topReview = JsonSafe.arr(dash, "top_review")?.let { parseTopReview(it) } ?: emptyList()
+        val countsElem = JsonSafe.obj(dash, "counts")
         val counts = if (countsElem != null) {
             ScreenerTierCounts(
-                high = countsElem.get("high")?.asInt ?: 0,
-                watch = countsElem.get("watch")?.asInt ?: 0,
-                low = countsElem.get("low")?.asInt ?: 0,
-                all = countsElem.get("all")?.asInt ?: stocks.size
+                high = JsonSafe.int(countsElem, "high") ?: 0,
+                watch = JsonSafe.int(countsElem, "watch") ?: 0,
+                low = JsonSafe.int(countsElem, "low") ?: 0,
+                all = JsonSafe.int(countsElem, "all") ?: stocks.size
             )
         } else {
             ScreenerTierCounts(
@@ -33,20 +32,16 @@ object ScreenerJsonParser {
                 all = stocks.size
             )
         }
-        val meta = if (scan != null && !scan.isJsonNull) {
-            buildMetaLine(scan)
-        } else {
-            emptyMeta
-        }
+        val meta = if (scan != null) buildMetaLine(scan) else emptyMeta
         return ScreenerUiState(stocks, topReview, counts, meta)
     }
 
     private fun buildMetaLine(scan: JsonObject): String = buildString {
-        val total = scan.get("total_raw")?.asInt ?: 0
-        val l1 = scan.get("passed_l1")?.asInt ?: 0
-        val high = scan.get("high_count")?.asInt ?: 0
-        val watch = scan.get("watch_count")?.asInt ?: 0
-        val low = scan.get("low_count")?.asInt ?: 0
+        val total = JsonSafe.int(scan, "total_raw") ?: 0
+        val l1 = JsonSafe.int(scan, "passed_l1") ?: 0
+        val high = JsonSafe.int(scan, "high_count") ?: 0
+        val watch = JsonSafe.int(scan, "watch_count") ?: 0
+        val low = JsonSafe.int(scan, "low_count") ?: 0
         append("$l1 passed L1 of $total")
         append(" · $high high · $watch watch · $low low")
     }
@@ -56,18 +51,18 @@ object ScreenerJsonParser {
         for (el in arr) {
             if (!el.isJsonObject) continue
             val o = el.asJsonObject
-            val symbol = o.get("symbol")?.asString?.trim().orEmpty()
+            val symbol = JsonSafe.string(o, "symbol")?.trim().orEmpty()
             if (symbol.isEmpty()) continue
             out.add(
                 ScreenerStock(
                     symbol = symbol,
-                    name = o.get("name")?.asString,
-                    cmp = o.get("cmp")?.asDoubleOrNull(),
-                    score_total = o.get("score_total")?.asDoubleOrNull(),
-                    tier = o.get("tier")?.asString,
-                    l1_passed = o.get("l1_passed")?.asBoolInt(),
+                    name = JsonSafe.string(o, "name"),
+                    cmp = JsonSafe.double(o, "cmp"),
+                    score_total = JsonSafe.double(o, "score_total"),
+                    tier = JsonSafe.string(o, "tier"),
+                    l1_passed = JsonSafe.int(o, "l1_passed"),
                     layer3 = parseLayer3(o.get("layer3")),
-                    user_verified = o.get("user_verified")?.asInt
+                    user_verified = JsonSafe.int(o, "user_verified")
                 )
             )
         }
@@ -79,17 +74,17 @@ object ScreenerJsonParser {
         for (el in arr) {
             if (!el.isJsonObject) continue
             val o = el.asJsonObject
-            val symbol = o.get("symbol")?.asString?.trim().orEmpty()
+            val symbol = JsonSafe.string(o, "symbol")?.trim().orEmpty()
             if (symbol.isEmpty()) continue
             out.add(
                 ScreenerTopReview(
                     symbol = symbol,
-                    name = o.get("name")?.asString,
-                    cmp = o.get("cmp")?.asDoubleOrNull(),
-                    score_total = o.get("score_total")?.asDoubleOrNull(),
-                    tier = o.get("tier")?.asString,
-                    l1_passed = o.get("l1_passed")?.asBool(),
-                    review_badge = o.get("review_badge")?.asString
+                    name = JsonSafe.string(o, "name"),
+                    cmp = JsonSafe.double(o, "cmp"),
+                    score_total = JsonSafe.double(o, "score_total"),
+                    tier = JsonSafe.string(o, "tier"),
+                    l1_passed = JsonSafe.bool(o, "l1_passed"),
+                    review_badge = JsonSafe.string(o, "review_badge")
                 )
             )
         }
@@ -99,39 +94,11 @@ object ScreenerJsonParser {
     private fun parseLayer3(el: JsonElement?): Layer3Result? {
         if (el == null || !el.isJsonObject) return null
         val o = el.asJsonObject
-        val signals = o.get("signals")?.takeIf { it.isJsonArray }?.asJsonArray
-            ?.mapNotNull { it.asString }
+        val signals = JsonSafe.arr(o, "signals")?.mapNotNull { JsonSafe.string(it) }
         return Layer3Result(
-            status = o.get("status")?.asString,
+            status = JsonSafe.string(o, "status"),
             signals = signals,
-            score = o.get("score")?.asInt
+            score = JsonSafe.int(o, "score")
         )
-    }
-
-    private fun JsonElement.asDoubleOrNull(): Double? {
-        if (isJsonNull) return null
-        return try {
-            asDouble
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun JsonElement.asBoolInt(): Int? {
-        if (isJsonNull) return null
-        return when {
-            isJsonPrimitive && asJsonPrimitive.isBoolean -> if (asBoolean) 1 else 0
-            isJsonPrimitive && asJsonPrimitive.isNumber -> asInt
-            else -> null
-        }
-    }
-
-    private fun JsonElement.asBool(): Boolean? {
-        if (isJsonNull) return null
-        return when {
-            isJsonPrimitive && asJsonPrimitive.isBoolean -> asBoolean
-            isJsonPrimitive && asJsonPrimitive.isNumber -> asInt != 0
-            else -> null
-        }
     }
 }

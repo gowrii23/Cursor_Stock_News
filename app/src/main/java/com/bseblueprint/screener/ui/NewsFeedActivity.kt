@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.data.NewsItem
+import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -41,14 +42,12 @@ class NewsFeedActivity : AppCompatActivity() {
             try {
                 val payload = withContext(Dispatchers.IO) { PythonBridge.getNews() }
                 val type = object : TypeToken<List<NewsItem>>() {}.type
+                val newsArr = JsonSafe.arr(payload, "news")
                 val primary: List<NewsItem> =
-                    gson.fromJson(payload.getAsJsonArray("news"), type) ?: emptyList()
+                    if (newsArr != null) gson.fromJson(newsArr, type) ?: emptyList() else emptyList()
+                val pulseArr = JsonSafe.arr(payload, "pulse_feed")
                 val pulse: List<NewsItem> =
-                    if (payload.has("pulse_feed") && !payload.get("pulse_feed").isJsonNull) {
-                        gson.fromJson(payload.getAsJsonArray("pulse_feed"), type) ?: emptyList()
-                    } else {
-                        emptyList()
-                    }
+                    if (pulseArr != null) gson.fromJson(pulseArr, type) ?: emptyList() else emptyList()
                 val rows = mutableListOf<NewsRow>()
                 primary.forEach { rows.add(NewsRow.Item(it)) }
                 if (pulse.isNotEmpty()) {

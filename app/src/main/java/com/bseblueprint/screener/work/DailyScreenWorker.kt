@@ -20,6 +20,7 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.ScreenerApp
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.ui.MainActivity
+import com.bseblueprint.screener.util.JsonSafe
 import java.util.concurrent.TimeUnit
 
 class DailyScreenWorker(
@@ -31,11 +32,11 @@ class DailyScreenWorker(
         return try {
             PythonBridge.init(applicationContext)
             val result = PythonBridge.runDailyScreen(useLive = true, forceDemo = false)
-            val status = result.get("status")?.asString ?: "error"
+            val status = JsonSafe.string(result, "status") ?: "error"
             if (status != "ok" && status != "partial") {
                 return Result.retry()
             }
-            val flagged = result.get("flagged_count")?.asInt ?: 0
+            val flagged = JsonSafe.int(result, "flagged_count") ?: 0
             notifyResult(flagged)
             Result.success()
         } catch (t: Throwable) {
@@ -61,7 +62,7 @@ class DailyScreenWorker(
         )
         val notif = NotificationCompat.Builder(applicationContext, ScreenerApp.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("BSE Blueprint Screener")
+            .setContentTitle(applicationContext.getString(R.string.app_name))
             .setContentText(
                 if (flagged > 0) "$flagged overreaction candidate(s) today"
                 else "Daily screen complete — no flags"
