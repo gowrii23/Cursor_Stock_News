@@ -1,6 +1,7 @@
 package com.bseblueprint.screener.ui
 
 import com.bseblueprint.screener.data.SwingCounts
+import com.bseblueprint.screener.data.SwingCoverage
 import com.bseblueprint.screener.data.SwingHit
 import com.bseblueprint.screener.data.SwingRegime
 import com.bseblueprint.screener.data.SwingUiState
@@ -13,9 +14,12 @@ object SwingJsonParser {
     fun parseDashboard(dash: JsonObject, emptyMeta: String): SwingUiState {
         val hits = JsonSafe.arr(dash, "hits")?.let { parseHits(it) } ?: emptyList()
         val regimeObj = JsonSafe.obj(dash, "regime")
+        val state = JsonSafe.string(regimeObj, "state") ?: "insufficient"
         val regime = SwingRegime(
-            bullish = JsonSafe.bool(regimeObj, "bullish") ?: false,
-            label = JsonSafe.string(regimeObj, "label") ?: "No run yet"
+            state = state,
+            bullish = state == "bullish",
+            label = JsonSafe.string(regimeObj, "label") ?: "No run yet",
+            asOf = JsonSafe.string(regimeObj, "as_of")
         )
         val countsObj = JsonSafe.obj(dash, "counts")
         val counts = if (countsObj != null) {
@@ -31,15 +35,37 @@ object SwingJsonParser {
                 all = hits.size
             )
         }
+        val covObj = JsonSafe.obj(dash, "coverage")
+        val coverage = SwingCoverage(
+            pricedCount = JsonSafe.int(covObj, "priced_count") ?: 0,
+            universeSize = JsonSafe.int(covObj, "universe_size") ?: 0,
+            asOf = JsonSafe.string(covObj, "as_of"),
+            topN = JsonSafe.int(covObj, "top_n") ?: 8,
+            totalHits = JsonSafe.int(covObj, "total_hits") ?: hits.size
+        )
         val run = JsonSafe.obj(dash, "run")
         val meta = if (run != null) {
-            val m = JsonSafe.int(run, "momentum_count") ?: 0
-            val s = JsonSafe.int(run, "sleeping_count") ?: 0
-            "${regime.label} · $m momentum · $s sleeping giant"
+            buildMeta(regime, coverage, counts)
         } else {
             emptyMeta
         }
-        return SwingUiState(hits, regime, counts, meta)
+        return SwingUiState(hits, regime, counts, coverage, meta)
+    }
+
+    private fun buildMeta(
+        regime: SwingRegime,
+        coverage: SwingCoverage,
+        counts: SwingCounts
+    ): String = buildString {
+        val asOf = coverage.asOf ?: regime.asOf
+        if (!asOf.isNullOrBlank()) append("As of $asOf · ")
+        if (coverage.universeSize > 0) {
+            append("${coverage.pricedCount}/${coverage.universeSize} priced · ")
+        }
+        append("${counts.momentum} mom · ${counts.sleeping} sleep")
+        if (coverage.totalHits > coverage.topN) {
+            append(" · showing top ${coverage.topN}")
+        }
     }
 
     private fun parseHits(arr: JsonArray): List<SwingHit> {
@@ -50,10 +76,11 @@ object SwingJsonParser {
             val symbol = JsonSafe.string(o, "symbol")?.trim().orEmpty()
             if (symbol.isEmpty()) continue
             val signals = JsonSafe.arr(o, "signals")?.mapNotNull { JsonSafe.string(it) }
+            val also = JsonSafe.arr(o, "also_screens")?.mapNotNull { JsonSafe.string(it) }
             val metricsObj = JsonSafe.obj(o, "metrics")
-            val metrics = metricsObj?.entrySet()?.mapNotNull { (k, v) ->
-                JsonSafe.double(v)?.let { k to it }
-            }?.toMap()
+            val metrics = metricsObj?.entrySet()?.associate { (k, v) ->
+                k to JsonSafe.double(v)
+            }
             out.add(
                 SwingHit(
                     symbol = symbol,
@@ -62,7 +89,9 @@ object SwingJsonParser {
                     close = JsonSafe.double(o, "close"),
                     score = JsonSafe.double(o, "score"),
                     signals = signals,
-                    metrics = metrics
+                    metrics = metrics,
+                    also_screens = also,
+                    as_of = JsonSafe.string(o, "as_of")
                 )
             )
         }

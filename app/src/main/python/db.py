@@ -41,6 +41,20 @@ class Database:
             cur.execute("ALTER TABLE screener_scan ADD COLUMN low_count INTEGER")
         if "top_review" not in scan_cols:
             cur.execute("ALTER TABLE screener_scan ADD COLUMN top_review TEXT")
+        swing_run_cols = {row[1] for row in cur.execute("PRAGMA table_info(swing_run)")}
+        if swing_run_cols:
+            if "as_of" not in swing_run_cols:
+                cur.execute("ALTER TABLE swing_run ADD COLUMN as_of TEXT")
+            if "regime_state" not in swing_run_cols:
+                cur.execute("ALTER TABLE swing_run ADD COLUMN regime_state TEXT")
+            if "hit_count" not in swing_run_cols:
+                cur.execute("ALTER TABLE swing_run ADD COLUMN hit_count INTEGER")
+        swing_hit_cols = {row[1] for row in cur.execute("PRAGMA table_info(swing_hit)")}
+        if swing_hit_cols:
+            if "also_screens" not in swing_hit_cols:
+                cur.execute("ALTER TABLE swing_hit ADD COLUMN also_screens TEXT")
+            if "as_of" not in swing_hit_cols:
+                cur.execute("ALTER TABLE swing_hit ADD COLUMN as_of TEXT")
         self.conn.commit()
 
     def _init_schema(self) -> None:
@@ -154,10 +168,13 @@ class Database:
               run_at TEXT,
               regime TEXT,
               regime_bullish INTEGER,
+              regime_state TEXT,
+              as_of TEXT,
               momentum_count INTEGER,
               sleeping_count INTEGER,
               universe_size INTEGER,
               priced_count INTEGER,
+              hit_count INTEGER,
               message TEXT
             );
 
@@ -170,7 +187,9 @@ class Database:
               close REAL,
               score REAL,
               signals TEXT,
-              metrics TEXT
+              metrics TEXT,
+              also_screens TEXT,
+              as_of TEXT
             );
             """
         )
@@ -621,18 +640,21 @@ class Database:
         cur.execute(
             """
             INSERT INTO swing_run(
-              run_at, regime, regime_bullish, momentum_count, sleeping_count,
-              universe_size, priced_count, message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              run_at, regime, regime_bullish, regime_state, as_of,
+              momentum_count, sleeping_count, universe_size, priced_count, hit_count, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meta.get("run_at"),
                 meta.get("regime"),
                 meta.get("regime_bullish"),
+                meta.get("regime_state"),
+                meta.get("as_of"),
                 meta.get("momentum_count"),
                 meta.get("sleeping_count"),
                 meta.get("universe_size"),
                 meta.get("priced_count"),
+                meta.get("hit_count"),
                 meta.get("message"),
             ),
         )
@@ -641,8 +663,8 @@ class Database:
             cur.execute(
                 """
                 INSERT INTO swing_hit(
-                  run_id, symbol, name, screen, close, score, signals, metrics
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  run_id, symbol, name, screen, close, score, signals, metrics, also_screens, as_of
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -653,6 +675,8 @@ class Database:
                     h.get("score"),
                     json.dumps(h.get("signals") or []),
                     json.dumps(h.get("metrics") or {}),
+                    json.dumps(h.get("also_screens") or []),
+                    h.get("as_of"),
                 ),
             )
         self.conn.commit()
@@ -686,7 +710,7 @@ class Database:
         out = []
         for r in rows:
             d = dict(r)
-            for key in ("signals", "metrics"):
+            for key in ("signals", "metrics", "also_screens"):
                 try:
                     d[key] = json.loads(d.get(key) or "null")
                 except Exception:
@@ -708,7 +732,7 @@ class Database:
         if not row:
             return None
         d = dict(row)
-        for key in ("signals", "metrics"):
+        for key in ("signals", "metrics", "also_screens"):
             try:
                 d[key] = json.loads(d.get(key) or "null")
             except Exception:

@@ -298,10 +298,15 @@ class MainActivity : AppCompatActivity(),
                 val status = JsonSafe.string(result, "status") ?: "error"
                 val momentum = JsonSafe.int(result, "momentum_count") ?: 0
                 val sleeping = JsonSafe.int(result, "sleeping_count") ?: 0
+                val hits = JsonSafe.int(result, "hit_count") ?: 0
+                val asOf = JsonSafe.string(result, "as_of") ?: ""
+                val priced = JsonSafe.int(result, "priced_count") ?: 0
+                val universe = JsonSafe.int(result, "universe_size") ?: 0
                 val success = status == "ok"
+                val asOfBit = if (asOf.isNotBlank()) " · as of $asOf" else ""
                 runSheet?.markComplete(
                     success,
-                    "Swing done — $momentum momentum · $sleeping sleeping giant"
+                    "Done — $hits ranked$asOfBit · $priced/$universe priced · $momentum mom · $sleeping sleep"
                 )
                 if (success) {
                     loadSwing()

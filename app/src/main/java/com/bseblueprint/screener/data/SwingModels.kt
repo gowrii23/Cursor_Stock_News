@@ -7,12 +7,16 @@ data class SwingHit(
     val close: Double? = null,
     val score: Double? = null,
     val signals: List<String>? = null,
-    val metrics: Map<String, Double>? = null
+    val metrics: Map<String, Double?>? = null,
+    val also_screens: List<String>? = null,
+    val as_of: String? = null
 )
 
 data class SwingRegime(
+    val state: String = "insufficient",
     val bullish: Boolean = false,
-    val label: String = ""
+    val label: String = "",
+    val asOf: String? = null
 )
 
 data class SwingCounts(
@@ -21,10 +25,19 @@ data class SwingCounts(
     val all: Int = 0
 )
 
+data class SwingCoverage(
+    val pricedCount: Int = 0,
+    val universeSize: Int = 0,
+    val asOf: String? = null,
+    val topN: Int = 8,
+    val totalHits: Int = 0
+)
+
 data class SwingUiState(
     val hits: List<SwingHit> = emptyList(),
     val regime: SwingRegime = SwingRegime(),
     val counts: SwingCounts = SwingCounts(),
+    val coverage: SwingCoverage = SwingCoverage(),
     val metaLine: String = ""
 )
 

@@ -40,6 +40,7 @@ class SwingDetailActivity : AppCompatActivity() {
                 bindDetail(json)
             } catch (_: Throwable) {
                 findViewById<TextView>(R.id.detailSymbol).text = symbol
+                findViewById<TextView>(R.id.detailSignals).text = "Failed to load detail"
             }
         }
     }
@@ -59,6 +60,7 @@ class SwingDetailActivity : AppCompatActivity() {
         }
         val close = JsonSafe.double(hit, "close")
         findViewById<TextView>(R.id.detailScore).text = buildString {
+            append("Strength ")
             append(String.format("%.0f", score))
             append(" · ")
             append(screenLabel)
@@ -69,16 +71,30 @@ class SwingDetailActivity : AppCompatActivity() {
         val signalText = if (signals != null && signals.size() > 0) {
             (0 until signals.size()).mapNotNull { JsonSafe.string(signals[it]) }
                 .joinToString("\n") { "• $it" }
+                .ifBlank { "—" }
         } else {
             "—"
         }
         findViewById<TextView>(R.id.detailSignals).text = signalText
 
         val metrics = JsonSafe.obj(hit, "metrics")
-        val metricsText = metrics?.entrySet()?.joinToString("\n") {
-            val v = JsonSafe.double(it.value)
-            "  ${it.key}: ${if (v != null) String.format("%.2f", v) else it.value}"
-        } ?: "—"
+        val metricsText = if (metrics == null || metrics.entrySet().isEmpty()) {
+            "—"
+        } else {
+            metrics.entrySet().joinToString("\n") {
+                val v = JsonSafe.double(it.value)
+                val label = when (it.key) {
+                    "stop_hint" -> "Suggested stop (~2×ATR)"
+                    "vol_ratio" -> "Volume vs 20d"
+                    "dist_to_high_pct" -> "Dist to range high %"
+                    "breakout_pct" -> "Breakout %"
+                    "range_tightness" -> "Base tightness"
+                    "high_lookback_days" -> "High lookback days"
+                    else -> it.key
+                }
+                "  $label: ${if (v != null) String.format("%.2f", v) else "—"}"
+            }
+        }
         findViewById<TextView>(R.id.detailMetrics).text = metricsText
     }
 

@@ -71,9 +71,9 @@
     <string name="screener_manual_verified">I verified manual checks for this stock</string>
     <string name="screener_raw_columns">Raw screener.in columns</string>
     <string name="swing_run">Run Swing Screen</string>
-    <string name="swing_empty">No swing screen yet.\nTap Run Swing Screen — uses free NSE bhavcopy data.</string>
-    <string name="swing_list_empty">No hits in this filter.</string>
-    <string name="swing_empty_momentum">No momentum hits. Market may be bearish (Nifty ≤ 200 SMA) or no stocks passed filters.</string>
+    <string name="swing_empty">No swing screen yet.\nTap Run Swing Screen — uses free NSE bhavcopy (may take a few minutes on first sync).</string>
+    <string name="swing_list_empty">No hits in top list for this filter.</string>
+    <string name="swing_empty_momentum">No momentum hits. Need bullish regime (Nifty &gt; 200 SMA) and volume/near-high setup.</string>
     <string name="swing_empty_sleeping">No Sleeping Giant hits this run.</string>
     <string name="swing_regime_unknown">Market regime: run a screen to check Nifty vs 200 SMA</string>
     <string name="swing_filter_all">All hits</string>
@@ -84,5 +84,5 @@
     <string name="swing_filter_sleeping_count">Sleeping Giant (%1$d)</string>
     <string name="swing_progress_title">Running swing screen</string>
     <string name="swing_detail_signals">Signals</string>
-    <string name="swing_detail_metrics">Metrics</string>
+    <string name="swing_detail_metrics">Metrics / stop hint</string>
 </resources>
