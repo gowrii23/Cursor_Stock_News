@@ -4,6 +4,7 @@
     <string name="tab_home">Home</string>
     <string name="tab_news">News</string>
     <string name="tab_screener">Screener</string>
+    <string name="tab_swing">Swing</string>
     <string name="action_run_screen">Run</string>
     <string name="action_settings">Settings</string>
     <string name="watchlist_empty">No flags yet.\nTap Run in the toolbar to start the EOD screen.</string>
@@ -69,4 +70,19 @@
     <string name="screener_manual_title">Notes — verify manually</string>
     <string name="screener_manual_verified">I verified manual checks for this stock</string>
     <string name="screener_raw_columns">Raw screener.in columns</string>
+    <string name="swing_run">Run Swing Screen</string>
+    <string name="swing_empty">No swing screen yet.\nTap Run Swing Screen — uses free NSE bhavcopy data.</string>
+    <string name="swing_list_empty">No hits in this filter.</string>
+    <string name="swing_empty_momentum">No momentum hits. Market may be bearish (Nifty ≤ 200 SMA) or no stocks passed filters.</string>
+    <string name="swing_empty_sleeping">No Sleeping Giant hits this run.</string>
+    <string name="swing_regime_unknown">Market regime: run a screen to check Nifty vs 200 SMA</string>
+    <string name="swing_filter_all">All hits</string>
+    <string name="swing_filter_momentum">Momentum</string>
+    <string name="swing_filter_sleeping">Sleeping Giant</string>
+    <string name="swing_filter_all_count">All hits (%1$d)</string>
+    <string name="swing_filter_momentum_count">Momentum (%1$d)</string>
+    <string name="swing_filter_sleeping_count">Sleeping Giant (%1$d)</string>
+    <string name="swing_progress_title">Running swing screen</string>
+    <string name="swing_detail_signals">Signals</string>
+    <string name="swing_detail_metrics">Metrics</string>
 </resources>

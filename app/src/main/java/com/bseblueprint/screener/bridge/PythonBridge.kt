@@ -32,6 +32,7 @@ object PythonBridge {
 
     private fun module() = Python.getInstance().getModule("pipeline")
     private fun screenerModule() = Python.getInstance().getModule("screener_pipeline")
+    private fun swingModule() = Python.getInstance().getModule("swing_pipeline")
 
     fun runDailyScreen(
         useLive: Boolean = true,
@@ -105,6 +106,21 @@ object PythonBridge {
             verified,
             dbPath
         ).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun runSwingScreen(reporter: RunProgressReporter? = null): JsonObject {
+        val raw = swingModule().callAttr("run_swing_screen", dbPath, reporter).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getSwingDashboard(): JsonObject {
+        val raw = swingModule().callAttr("get_swing_dashboard_json", dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getSwingDetail(symbol: String): JsonObject {
+        val raw = swingModule().callAttr("get_swing_detail_json", symbol, dbPath).toString()
         return JsonParser.parseString(raw).asJsonObject
     }
 }

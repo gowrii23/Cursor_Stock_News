@@ -12,6 +12,7 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.bridge.RunProgressReporter
 import com.bseblueprint.screener.data.ScreenerStock
+import com.bseblueprint.screener.data.SwingHit
 import com.bseblueprint.screener.data.WatchlistItem
 import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.appbar.MaterialToolbar
@@ -29,6 +30,7 @@ import java.time.format.DateTimeFormatter
 class MainActivity : AppCompatActivity(),
     HomeFragment.Callback,
     ScreenerFragment.Callback,
+    SwingFragment.Callback,
     RunProgressBottomSheet.Listener {
 
     private lateinit var subtitle: TextView
@@ -37,8 +39,10 @@ class MainActivity : AppCompatActivity(),
     private var homeFragment: HomeFragment? = null
     private var newsFragment: NewsFragment? = null
     private var screenerFragment: ScreenerFragment? = null
+    private var swingFragment: SwingFragment? = null
     private var runSheet: RunProgressBottomSheet? = null
     private var screenerRunActive = false
+    private var swingRunActive = false
 
     private val screenerScanLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -66,8 +70,11 @@ class MainActivity : AppCompatActivity(),
             homeFragment = HomeFragment()
             newsFragment = NewsFragment()
             screenerFragment = ScreenerFragment()
+            swingFragment = SwingFragment()
             val fm = supportFragmentManager
             fm.beginTransaction()
+                .add(R.id.fragmentContainer, swingFragment!!, TAG_SWING)
+                .hide(swingFragment!!)
                 .add(R.id.fragmentContainer, screenerFragment!!, TAG_SCREENER)
                 .hide(screenerFragment!!)
                 .add(R.id.fragmentContainer, newsFragment!!, TAG_NEWS)
@@ -78,6 +85,7 @@ class MainActivity : AppCompatActivity(),
             homeFragment = supportFragmentManager.findFragmentByTag(TAG_HOME) as? HomeFragment
             newsFragment = supportFragmentManager.findFragmentByTag(TAG_NEWS) as? NewsFragment
             screenerFragment = supportFragmentManager.findFragmentByTag(TAG_SCREENER) as? ScreenerFragment
+            swingFragment = supportFragmentManager.findFragmentByTag(TAG_SWING) as? SwingFragment
         }
 
         bottomNav.setOnItemSelectedListener { item ->
@@ -102,6 +110,13 @@ class MainActivity : AppCompatActivity(),
                     screenerFragment?.let { onScreenerLoad() }
                     true
                 }
+                R.id.nav_swing -> {
+                    showTab(TAG_SWING)
+                    supportActionBar?.title = getString(R.string.tab_swing)
+                    subtitle.visibility = View.GONE
+                    swingFragment?.let { onSwingLoad() }
+                    true
+                }
                 else -> false
             }
         }
@@ -114,9 +129,15 @@ class MainActivity : AppCompatActivity(),
     }
 
     override fun onPrepareOptionsMenu(menu: android.view.Menu): Boolean {
-        val onScreener = bottomNav.selectedItemId == R.id.nav_screener
-        menu.findItem(R.id.action_share)?.isVisible = !onScreener
-        menu.findItem(R.id.action_run)?.title = getString(R.string.action_run_screen)
+        val tab = bottomNav.selectedItemId
+        val onScreener = tab == R.id.nav_screener
+        val onSwing = tab == R.id.nav_swing
+        menu.findItem(R.id.action_share)?.isVisible = !onScreener && !onSwing
+        menu.findItem(R.id.action_run)?.title = when {
+            onScreener -> getString(R.string.screener_run_scan)
+            onSwing -> getString(R.string.swing_run)
+            else -> getString(R.string.action_run_screen)
+        }
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -127,10 +148,10 @@ class MainActivity : AppCompatActivity(),
                 true
             }
             R.id.action_run -> {
-                if (bottomNav.selectedItemId == R.id.nav_screener) {
-                    startScreenerScan()
-                } else {
-                    startRunWithProgress()
+                when (bottomNav.selectedItemId) {
+                    R.id.nav_screener -> startScreenerScan()
+                    R.id.nav_swing -> startSwingRun()
+                    else -> startRunWithProgress()
                 }
                 true
             }
@@ -146,12 +167,14 @@ class MainActivity : AppCompatActivity(),
         val home = homeFragment ?: return
         val news = newsFragment ?: return
         val screener = screenerFragment ?: return
+        val swing = swingFragment ?: return
         val tx = supportFragmentManager.beginTransaction()
-        tx.hide(home).hide(news).hide(screener)
+        tx.hide(home).hide(news).hide(screener).hide(swing)
         when (tag) {
             TAG_HOME -> tx.show(home)
             TAG_NEWS -> tx.show(news)
             TAG_SCREENER -> tx.show(screener)
+            TAG_SWING -> tx.show(swing)
         }
         tx.commit()
     }
@@ -188,14 +211,32 @@ class MainActivity : AppCompatActivity(),
 
     override fun onScreenerLoad() = loadScreener()
 
+    override fun onSwingRun() = startSwingRun()
+
+    override fun onSwingHitClick(hit: SwingHit) {
+        startActivity(
+            Intent(this, SwingDetailActivity::class.java)
+                .putExtra(SwingDetailActivity.EXTRA_SYMBOL, hit.symbol)
+        )
+    }
+
+    override fun onSwingLoad() = loadSwing()
+
     override fun onRunDismissed() {
         runSheet = null
-        if (bottomNav.selectedItemId == R.id.nav_screener || screenerRunActive) {
-            screenerRunActive = false
-            loadScreener()
-        } else {
-            loadDashboard(seedIfEmpty = false)
-            newsFragment?.loadNews()
+        when {
+            bottomNav.selectedItemId == R.id.nav_swing || swingRunActive -> {
+                swingRunActive = false
+                loadSwing()
+            }
+            bottomNav.selectedItemId == R.id.nav_screener || screenerRunActive -> {
+                screenerRunActive = false
+                loadScreener()
+            }
+            else -> {
+                loadDashboard(seedIfEmpty = false)
+                newsFragment?.loadNews()
+            }
         }
     }
 
@@ -234,6 +275,61 @@ class MainActivity : AppCompatActivity(),
                 }
             } catch (t: Throwable) {
                 runSheet?.markComplete(false, "Scan failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun startSwingRun() {
+        swingRunActive = true
+        val sheet = RunProgressBottomSheet.newInstance(getString(R.string.swing_progress_title)).also {
+            it.listener = this
+            runSheet = it
+        }
+        sheet.show(supportFragmentManager, RunProgressBottomSheet.TAG)
+
+        lifecycleScope.launch {
+            try {
+                val reporter = RunProgressReporter { percent, message ->
+                    runSheet?.updateProgress(percent, message)
+                }
+                val result = withContext(Dispatchers.IO) {
+                    PythonBridge.runSwingScreen(reporter)
+                }
+                val status = JsonSafe.string(result, "status") ?: "error"
+                val momentum = JsonSafe.int(result, "momentum_count") ?: 0
+                val sleeping = JsonSafe.int(result, "sleeping_count") ?: 0
+                val success = status == "ok"
+                runSheet?.markComplete(
+                    success,
+                    "Swing done — $momentum momentum · $sleeping sleeping giant"
+                )
+                if (success) {
+                    loadSwing()
+                }
+            } catch (t: Throwable) {
+                runSheet?.markComplete(false, "Swing screen failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun loadSwing() {
+        swingFragment?.setLoading(true)
+        lifecycleScope.launch {
+            try {
+                val dash = withContext(Dispatchers.IO) { PythonBridge.getSwingDashboard() }
+                val state = SwingJsonParser.parseDashboard(dash, getString(R.string.swing_empty))
+                val run = JsonSafe.obj(dash, "run")
+                val at = JsonSafe.string(run, "run_at")
+                val meta = if (!at.isNullOrBlank()) {
+                    "${state.metaLine} · ${formatIstTime(at)}"
+                } else {
+                    state.metaLine
+                }
+                swingFragment?.bindState(state.copy(metaLine = meta))
+            } catch (t: Throwable) {
+                Toast.makeText(this@MainActivity, "Load failed: ${t.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                swingFragment?.setLoading(false)
             }
         }
     }
@@ -417,5 +513,6 @@ class MainActivity : AppCompatActivity(),
         private const val TAG_HOME = "home"
         private const val TAG_NEWS = "news"
         private const val TAG_SCREENER = "screener"
+        private const val TAG_SWING = "swing"
     }
 }

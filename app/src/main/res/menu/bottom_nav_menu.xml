@@ -9,6 +9,10 @@
         android:icon="@drawable/ic_news"
         android:title="@string/tab_news" />
     <item
+        android:id="@+id/nav_swing"
+        android:icon="@drawable/ic_swing"
+        android:title="@string/tab_swing" />
+    <item
         android:id="@+id/nav_screener"
         android:icon="@drawable/ic_screener"
         android:title="@string/tab_screener" />
