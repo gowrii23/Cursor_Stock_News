@@ -53,8 +53,17 @@ class ScreenerDetailActivity : AppCompatActivity() {
             JsonSafe.string(stock, "name") ?: "—"
         val score = JsonSafe.double(stock, "score_total") ?: 0.0
         val tier = JsonSafe.string(stock, "tier") ?: ""
+        val tagsArr = JsonSafe.arr(stock, "blueprint_tags")
+        val tags = if (tagsArr != null && tagsArr.size() > 0) {
+            (0 until tagsArr.size()).mapNotNull { JsonSafe.string(tagsArr[it]) }
+                .joinToString(", ")
+        } else ""
         findViewById<TextView>(R.id.detailScore).text =
-            "${String.format("%.0f", score)}/100 · $tier"
+            if (tags.isNotEmpty()) {
+                "${String.format("%.0f", score)}/100 · $tier · Blueprint: $tags"
+            } else {
+                "${String.format("%.0f", score)}/100 · $tier"
+            }
 
         val breakdown = JsonSafe.obj(stock, "score_breakdown")
         val bdLines = breakdown?.entrySet()?.joinToString("\n") {

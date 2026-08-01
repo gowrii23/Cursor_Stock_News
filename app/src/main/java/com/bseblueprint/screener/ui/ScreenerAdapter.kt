@@ -38,6 +38,7 @@ class ScreenerAdapter(
         private val score = itemView.findViewById<TextView>(R.id.stockScore)
         private val cmp = itemView.findViewById<TextView>(R.id.stockCmp)
         private val tierChip = itemView.findViewById<Chip>(R.id.tierChip)
+        private val blueprintChip = itemView.findViewById<Chip>(R.id.blueprintChip)
         private val l3 = itemView.findViewById<TextView>(R.id.layer3Hint)
 
         fun bind(item: ScreenerStock, onClick: (ScreenerStock) -> Unit) {
@@ -51,6 +52,15 @@ class ScreenerAdapter(
                 "watch" -> "50–69"
                 "low" -> "<50"
                 else -> tier
+            }
+            val isBlueprint = item.blueprint_match || item.blueprint_tags.isNotEmpty()
+            blueprintChip.visibility = if (isBlueprint) View.VISIBLE else View.GONE
+            if (isBlueprint) {
+                blueprintChip.text = if (item.blueprint_tags.isNotEmpty()) {
+                    "BP · ${item.blueprint_tags.first()}"
+                } else {
+                    itemView.context.getString(R.string.screener_theme_blueprint)
+                }
             }
             val l3s = item.layer3?.signals?.size ?: 0
             l3.text = if (l3s > 0) "L3: $l3s signals" else "L3: —"
