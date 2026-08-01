@@ -47,7 +47,9 @@ class ScreenerDetailActivity : AppCompatActivity() {
     }
 
     private fun bindDetail(json: JsonObject) {
-        val stock = json.getAsJsonObject("stock") ?: return
+        val stockElem = json.get("stock")
+        if (stockElem == null || !stockElem.isJsonObject) return
+        val stock = stockElem.asJsonObject
         findViewById<TextView>(R.id.detailSymbol).text = stock.get("symbol")?.asString
         findViewById<TextView>(R.id.detailName).text = stock.get("name")?.asString
         val score = stock.get("score_total")?.asDouble ?: 0.0
@@ -55,13 +57,15 @@ class ScreenerDetailActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.detailScore).text =
             "${String.format("%.0f", score)}/100 · $tier"
 
-        val breakdown = stock.getAsJsonObject("score_breakdown")
+        val breakdownElem = stock.get("score_breakdown")
+        val breakdown = if (breakdownElem != null && breakdownElem.isJsonObject) breakdownElem.asJsonObject else null
         val bdLines = breakdown?.entrySet()?.joinToString("\n") {
             "  ${it.key}: ${String.format("%.1f", it.value.asDouble)}"
         } ?: "—"
         findViewById<TextView>(R.id.detailBreakdown).text = bdLines
 
-        val l3 = stock.getAsJsonObject("layer3")
+        val l3Elem = stock.get("layer3")
+        val l3 = if (l3Elem != null && l3Elem.isJsonObject) l3Elem.asJsonObject else null
         val signals = l3?.getAsJsonArray("signals")
         val l3Text = if (signals != null && signals.size() > 0) {
             (0 until signals.size()).joinToString("\n") { "• ${signals[it].asString}" }
@@ -76,7 +80,8 @@ class ScreenerDetailActivity : AppCompatActivity() {
         } else "—"
         findViewById<TextView>(R.id.detailManual).text = manualText
 
-        val raw = stock.getAsJsonObject("raw_columns")
+        val rawElem = stock.get("raw_columns")
+        val raw = if (rawElem != null && rawElem.isJsonObject) rawElem.asJsonObject else null
         val rawText = raw?.entrySet()?.joinToString("\n") {
             "${it.key}: ${it.value}"
         } ?: "—"

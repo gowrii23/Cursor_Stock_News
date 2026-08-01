@@ -236,12 +236,18 @@ class MainActivity : AppCompatActivity(),
         lifecycleScope.launch {
             try {
                 val dash = withContext(Dispatchers.IO) { PythonBridge.getScreenerDashboard() }
-                val scan = dash.getAsJsonObject("scan")
-                val arr = dash.getAsJsonArray("stocks")
+                val scanElem = dash.get("scan")
+                val scan = if (scanElem != null && scanElem.isJsonObject) scanElem.asJsonObject else null
+                val stocksElem = dash.get("stocks")
+                val arr = if (stocksElem != null && stocksElem.isJsonArray) stocksElem.asJsonArray else null
                 val type = object : TypeToken<List<ScreenerStock>>() {}.type
-                val items: List<ScreenerStock> = gson.fromJson(arr, type) ?: emptyList()
+                val items: List<ScreenerStock> = if (arr != null) {
+                    gson.fromJson(arr, type) ?: emptyList()
+                } else {
+                    emptyList()
+                }
                 val meta = buildString {
-                    if (scan != null) {
+                    if (scan != null && !scan.isJsonNull) {
                         append("${scan.get("passed_l1")?.asInt ?: 0} passed L1")
                         append(" · ${scan.get("high_count")?.asInt ?: 0} high")
                         append(" · ${scan.get("watch_count")?.asInt ?: 0} watch")
