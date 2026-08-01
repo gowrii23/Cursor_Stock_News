@@ -45,7 +45,17 @@
     <string name="screener_empty">No scan yet.\nTap Run Scan to capture from screener.in.</string>
     <string name="screener_tier_high">80+ High</string>
     <string name="screener_tier_watch">60–79 Watch</string>
+    <string name="screener_tier_low">&lt;60 Low</string>
     <string name="screener_tier_all">All L1 pass</string>
+    <string name="screener_tier_high_count">80+ High (%1$d)</string>
+    <string name="screener_tier_watch_count">60–79 Watch (%1$d)</string>
+    <string name="screener_tier_low_count">&lt;60 Low (%1$d)</string>
+    <string name="screener_tier_all_count">All L1 pass (%1$d)</string>
+    <string name="screener_top_review_title">Top 3 — manual review</string>
+    <string name="screener_list_empty">No stocks in this tier.</string>
+    <string name="screener_filter_empty_high">No 80+ high conviction stocks this scan. Check Watch or All L1 pass.</string>
+    <string name="screener_filter_empty_watch">No 60–79 watchlist stocks this scan. Most may be in &lt;60 Low.</string>
+    <string name="screener_filter_empty_low">No &lt;60 low tier stocks — unusual; check All L1 pass.</string>
     <string name="screener_scan_title">screener.in capture</string>
     <string name="screener_scan_login_hint">Log in to screener.in if prompted, then tap Start Capture.</string>
     <string name="screener_scan_start">Start Capture</string>

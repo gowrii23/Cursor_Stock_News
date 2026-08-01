@@ -36,6 +36,11 @@ class Database:
             cur.execute("ALTER TABLE news_cache ADD COLUMN published_at TEXT")
         if "timing_vs_close" not in news_cols:
             cur.execute("ALTER TABLE news_cache ADD COLUMN timing_vs_close TEXT")
+        scan_cols = {row[1] for row in cur.execute("PRAGMA table_info(screener_scan)")}
+        if "low_count" not in scan_cols:
+            cur.execute("ALTER TABLE screener_scan ADD COLUMN low_count INTEGER")
+        if "top_review" not in scan_cols:
+            cur.execute("ALTER TABLE screener_scan ADD COLUMN top_review TEXT")
         self.conn.commit()
 
     def _init_schema(self) -> None:
@@ -457,8 +462,9 @@ class Database:
         cur.execute(
             """
             INSERT INTO screener_scan(
-              scanned_at, source_url, total_raw, passed_l1, high_count, watch_count, message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+              scanned_at, source_url, total_raw, passed_l1, high_count, watch_count,
+              low_count, top_review, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meta.get("scanned_at"),
@@ -467,6 +473,8 @@ class Database:
                 meta.get("passed_l1"),
                 meta.get("high_count"),
                 meta.get("watch_count"),
+                meta.get("low_count"),
+                json.dumps(meta.get("top_review") or []),
                 meta.get("message"),
             ),
         )
@@ -502,7 +510,17 @@ class Database:
         row = cur.execute(
             "SELECT * FROM screener_scan ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("top_review"):
+            try:
+                d["top_review"] = json.loads(d["top_review"])
+            except Exception:
+                d["top_review"] = []
+        else:
+            d["top_review"] = []
+        return d
 
     def get_screener_stocks(
         self,
