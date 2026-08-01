@@ -42,6 +42,7 @@ class SwingFragment : Fragment() {
     private lateinit var chipSleeping: Chip
     private var allItems: List<SwingHit> = emptyList()
     private var hasRun = false
+    private var topN = 8
     private var currentFilter = SwingScreenFilter.ALL
 
     override fun onAttach(context: Context) {
@@ -87,16 +88,23 @@ class SwingFragment : Fragment() {
 
     fun bindState(state: SwingUiState) {
         allItems = state.hits
-        hasRun = state.hits.isNotEmpty() || state.metaLine != getString(R.string.swing_empty)
+        topN = state.coverage.topN.coerceAtLeast(1)
+        hasRun = state.hits.isNotEmpty() ||
+            state.coverage.pricedCount > 0 ||
+            state.metaLine != getString(R.string.swing_empty)
         subtitle.text = state.metaLine
         updateChipCounts(state.counts)
-        bindRegime(state.regime.bullish, state.regime.label)
+        bindRegime(state.regime.state, state.regime.label)
         applyFilter()
     }
 
-    private fun bindRegime(bullish: Boolean, label: String) {
+    private fun bindRegime(state: String, label: String) {
         regimeText.text = label
-        val color = if (bullish) R.color.severity_candidate else R.color.severity_unknown
+        val color = when (state) {
+            "bullish" -> R.color.severity_candidate
+            "bearish" -> R.color.severity_exclude
+            else -> R.color.severity_unknown
+        }
         regimeText.setTextColor(ContextCompat.getColor(requireContext(), color))
     }
 
@@ -113,7 +121,8 @@ class SwingFragment : Fragment() {
                 SwingScreenFilter.SLEEPING -> item.screen == "sleeping"
                 SwingScreenFilter.ALL -> true
             }
-        }
+        }.sortedByDescending { it.score ?: 0.0 }
+            .take(topN)
         adapter.submit(filtered)
         val empty = filtered.isEmpty()
         emptyView.visibility = if (empty) View.VISIBLE else View.GONE

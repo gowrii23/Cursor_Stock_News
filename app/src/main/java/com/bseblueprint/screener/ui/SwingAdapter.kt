@@ -45,12 +45,27 @@ class SwingAdapter(
             name.text = item.name ?: item.symbol
             score.text = String.format("%.0f", item.score ?: 0.0)
             close.text = item.close?.let { "₹%.2f".format(it) } ?: "—"
-            screenChip.text = when (item.screen) {
+            val primary = when (item.screen) {
                 "momentum" -> "Momentum"
                 "sleeping" -> "Sleeping Giant"
                 else -> item.screen ?: "—"
             }
-            hint.text = item.signals?.firstOrNull() ?: "—"
+            val also = item.also_screens.orEmpty()
+                .map {
+                    when (it) {
+                        "momentum" -> "Mom"
+                        "sleeping" -> "Sleep"
+                        else -> it
+                    }
+                }
+            screenChip.text = if (also.isEmpty()) primary else "$primary + ${also.joinToString()}"
+            val vol = item.metrics?.get("vol_ratio")
+            val stop = item.metrics?.get("stop_hint")
+            hint.text = buildString {
+                append(item.signals?.firstOrNull() ?: "—")
+                if (vol != null) append(" · vol ${"%.1f".format(vol)}×")
+                if (stop != null) append(" · stop ~₹${"%.0f".format(stop)}")
+            }
             itemView.setOnClickListener { onClick(item) }
         }
     }
