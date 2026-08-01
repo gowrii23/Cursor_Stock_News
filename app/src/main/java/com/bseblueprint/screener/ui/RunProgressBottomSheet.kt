@@ -20,13 +20,13 @@ class RunProgressBottomSheet : BottomSheetDialogFragment() {
         fun onRunDismissed()
     }
 
+    private var titleView: TextView? = null
     private var stageView: TextView? = null
     private var percentView: TextView? = null
     private var progressBar: LinearProgressIndicator? = null
     private var logView: TextView? = null
     private var logScroll: NestedScrollView? = null
     private var doneButton: MaterialButton? = null
-    private var running = true
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     var listener: Listener? = null
@@ -40,12 +40,14 @@ class RunProgressBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         isCancelable = false
+        titleView = view.findViewById(R.id.runTitle)
         stageView = view.findViewById(R.id.runStage)
         percentView = view.findViewById(R.id.runPercent)
         progressBar = view.findViewById(R.id.runProgressBar)
         logView = view.findViewById(R.id.runLog)
         logScroll = view.findViewById(R.id.runLogScroll)
         doneButton = view.findViewById(R.id.runDoneButton)
+        arguments?.getString(ARG_TITLE)?.let { titleView?.text = it }
         doneButton?.setOnClickListener {
             listener?.onRunDismissed()
             dismissAllowingStateLoss()
@@ -64,7 +66,6 @@ class RunProgressBottomSheet : BottomSheetDialogFragment() {
 
     fun markComplete(success: Boolean, summary: String) {
         if (!isAdded) return
-        running = false
         isCancelable = true
         progressBar?.progress = 100
         percentView?.text = getString(R.string.run_progress_percent, 100)
@@ -92,7 +93,12 @@ class RunProgressBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         const val TAG = "RunProgressBottomSheet"
+        private const val ARG_TITLE = "title"
 
-        fun newInstance(): RunProgressBottomSheet = RunProgressBottomSheet()
+        fun newInstance(title: String? = null): RunProgressBottomSheet {
+            return RunProgressBottomSheet().apply {
+                arguments = Bundle().apply { putString(ARG_TITLE, title) }
+            }
+        }
     }
 }

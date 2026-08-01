@@ -9,6 +9,7 @@ import java.io.File
 
 object PythonBridge {
     private val gson = Gson()
+    const val SCREENER_DEFAULT_URL = "https://www.screener.in/screens/3835709/cursor/"
     @Volatile private var dbPath: String = ""
 
     fun init(context: Context) {
@@ -30,6 +31,7 @@ object PythonBridge {
     }
 
     private fun module() = Python.getInstance().getModule("pipeline")
+    private fun screenerModule() = Python.getInstance().getModule("screener_pipeline")
 
     fun runDailyScreen(
         useLive: Boolean = true,
@@ -69,6 +71,40 @@ object PythonBridge {
     fun saveSettings(payload: Map<String, Any?>): JsonObject {
         val json = gson.toJson(payload)
         val raw = module().callAttr("save_settings_json", json, dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun processScreenerCapture(
+        rowsJson: String,
+        reporter: RunProgressReporter? = null
+    ): JsonObject {
+        val raw = screenerModule().callAttr(
+            "process_screener_capture",
+            rowsJson,
+            dbPath,
+            SCREENER_DEFAULT_URL,
+            reporter
+        ).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getScreenerDashboard(): JsonObject {
+        val raw = screenerModule().callAttr("get_screener_dashboard_json", dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun getScreenerDetail(symbol: String): JsonObject {
+        val raw = screenerModule().callAttr("get_screener_detail_json", symbol, dbPath).toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun setScreenerVerified(symbol: String, verified: Boolean): JsonObject {
+        val raw = screenerModule().callAttr(
+            "set_screener_verified_json",
+            symbol,
+            verified,
+            dbPath
+        ).toString()
         return JsonParser.parseString(raw).asJsonObject
     }
 }
