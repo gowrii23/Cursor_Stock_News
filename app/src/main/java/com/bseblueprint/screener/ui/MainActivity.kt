@@ -7,6 +7,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
@@ -74,6 +77,7 @@ class MainActivity : AppCompatActivity(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
@@ -82,6 +86,16 @@ class MainActivity : AppCompatActivity(),
 
         subtitle = findViewById(R.id.subtitle)
         bottomNav = findViewById(R.id.bottomNav)
+        ViewCompat.setOnApplyWindowInsetsListener(bottomNav) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bars.bottom)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.appBar)) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            view.setPadding(view.paddingLeft, bars.top, view.paddingRight, view.paddingBottom)
+            insets
+        }
 
         if (savedInstanceState == null) {
             homeFragment = HomeFragment()
@@ -311,58 +325,43 @@ class MainActivity : AppCompatActivity(),
     }
 
     private fun startPattasScan() {
-        pattasRunActive = true
-        val sheet = RunProgressBottomSheet.newInstance(getString(R.string.pattas_progress_title)).also {
-            it.listener = this
-            runSheet = it
-        }
-        sheet.show(supportFragmentManager, RunProgressBottomSheet.TAG)
-
+        pattasCapturedRowsJson = "[]"
         lifecycleScope.launch {
             try {
-                val reporter = RunProgressReporter { percent, message ->
-                    runSheet?.updateProgress(percent, message)
-                }
                 val result = withContext(Dispatchers.IO) {
-                    PythonBridge.startPattasScan(reporter)
+                    PythonBridge.startPattasScan(null)
                 }
                 val status = JsonSafe.string(result, "status") ?: "error"
-                when (status) {
-                    "needs_webview" -> {
-                        val capturedArr = JsonSafe.arr(result, "captured_rows")
-                        pattasCapturedRowsJson = capturedArr?.toString() ?: "[]"
-                        val failedArr = JsonSafe.arr(result, "failed_symbols")
-                        val failed = jsonArrayToStringList(failedArr)
-                        if (failed.isEmpty()) {
-                            runSheet?.markComplete(false, "WebView fallback requested but no symbols listed")
-                        } else {
-                            runSheet?.dismissAllowingStateLoss()
-                            runSheet = null
-                            pattasScanLauncher.launch(
-                                Intent(this@MainActivity, PattasScanActivity::class.java)
-                                    .putStringArrayListExtra(
-                                        PattasScanActivity.EXTRA_SYMBOLS,
-                                        ArrayList(failed)
-                                    )
-                            )
-                        }
-                    }
-                    "ok" -> {
-                        val count = JsonSafe.int(result, "count") ?: 0
-                        runSheet?.markComplete(true, "Done — $count Pattas stocks scored")
-                        loadPattas()
-                    }
-                    else -> {
-                        runSheet?.markComplete(
-                            false,
-                            JsonSafe.string(result, "message") ?: "Pattas scan failed"
-                        )
-                    }
+                if (status != "needs_webview") {
+                    Toast.makeText(
+                        this@MainActivity,
+                        JsonSafe.string(result, "message") ?: "Pattas scan failed",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
                 }
+                val symbols = extractPattasSymbolList(result)
+                if (symbols.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Pattas symbol list is empty", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                pattasScanLauncher.launch(
+                    Intent(this@MainActivity, PattasScanActivity::class.java)
+                        .putStringArrayListExtra(
+                            PattasScanActivity.EXTRA_SYMBOLS,
+                            ArrayList(symbols)
+                        )
+                )
             } catch (t: Throwable) {
-                runSheet?.markComplete(false, "Pattas scan failed: ${t.message}")
+                Toast.makeText(this@MainActivity, "Pattas scan failed: ${t.message}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun extractPattasSymbolList(result: JsonObject): List<String> {
+        val fromSymbols = jsonArrayToStringList(JsonSafe.arr(result, "symbols"))
+        if (fromSymbols.isNotEmpty()) return fromSymbols
+        return jsonArrayToStringList(JsonSafe.arr(result, "failed_symbols"))
     }
 
     private fun finishPattasScanWithWebview(webviewJson: String) {

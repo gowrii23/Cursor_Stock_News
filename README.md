@@ -16,12 +16,12 @@ Personal Android APK: EOD overreaction screener (Home) + pre-run-up fundamental 
 
 ## Download (latest debug APK)
 
-**[Download APK v1.5.0](releases/bse-blueprint-screener-1.5.0-debug.apk)** — Pattas tab: peer-relative 4-pillar scoring, editable symbol list, PATTAS TO BE candidates.
+**[Download APK v1.5.1](releases/bse-blueprint-screener-1.5.1-debug.apk)** — Pattas WebView-only capture with login step; bottom nav layout fix for 5 tabs.
 
 Direct link (raw):
 
 ```
-https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.5.0-debug.apk
+https://github.com/gowrii23/Cursor_Stock_News/raw/main/releases/bse-blueprint-screener-1.5.1-debug.apk
 ```
 
 On your phone: download the APK, allow install from unknown sources if prompted, then open the file to install.

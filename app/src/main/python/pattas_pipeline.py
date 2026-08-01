@@ -9,8 +9,6 @@ from typing import Any, Dict, List, Optional
 from db import Database
 from nse_fetch import fetch_ohlc_nse
 from pattas_engine import score_rows
-from pattas_headless_fetch import fetch_many
-from pipeline import load_json_asset
 from progress_report import report
 
 logger = logging.getLogger(__name__)
@@ -64,30 +62,23 @@ def start_pattas_scan(
     db_path: Optional[str] = None,
     progress_cb: Any = None,
 ) -> str:
+    """Return symbol list for WebView-only Pattas capture (no headless HTTP)."""
     db = Database(db_path)
     try:
         db.seed_pattas_symbols_if_empty()
         symbols = db.get_pattas_symbols()
-        sym_list = [s["symbol"] for s in symbols]
+        sym_list = [s["symbol"] for s in symbols if s.get("symbol")]
         if not sym_list:
             return json.dumps({"status": "error", "message": "Pattas symbol list is empty"})
-
-        report(progress_cb, 10, f"Headless fetch for {len(sym_list)} Pattas symbols…")
-        rows, failed = fetch_many(sym_list)
-        report(
-            progress_cb,
-            40,
-            f"Headless: {len(rows)} ok · {len(failed)} need WebView",
+        report(progress_cb, 5, f"Ready — {len(sym_list)} symbols for WebView capture")
+        return json.dumps(
+            {
+                "status": "needs_webview",
+                "symbols": sym_list,
+                "captured_rows": [],
+                "failed_symbols": sym_list,
+            }
         )
-        if failed:
-            return json.dumps(
-                {
-                    "status": "needs_webview",
-                    "captured_rows": rows,
-                    "failed_symbols": failed,
-                }
-            )
-        return _finalize_pattas_scan(rows, db, progress_cb)
     except Exception as e:
         logger.exception("pattas scan start failed")
         return json.dumps({"status": "error", "message": str(e)})

@@ -26,6 +26,7 @@ class PattasScanActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var progress: ProgressBar
     private lateinit var captureButton: MaterialButton
+    private lateinit var loginButton: MaterialButton
     private val handler = Handler(Looper.getMainLooper())
     private val gson = Gson()
     private val capturedRows = mutableListOf<Map<String, Any?>>()
@@ -54,6 +55,7 @@ class PattasScanActivity : AppCompatActivity() {
         statusText = findViewById(R.id.scanStatus)
         progress = findViewById(R.id.scanProgress)
         captureButton = findViewById(R.id.btnStartCapture)
+        loginButton = findViewById(R.id.btnOpenLogin)
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -70,20 +72,23 @@ class PattasScanActivity : AppCompatActivity() {
                 if (capturing) {
                     extractAttempts = 0
                     handler.postDelayed({ injectExtract() }, PAGE_LOAD_DELAY_MS)
-                } else {
-                    statusText.text = getString(R.string.screener_scan_login_hint)
+                } else if (url?.contains("/login") == true) {
+                    statusText.text = getString(R.string.pattas_scan_login_step)
                 }
             }
         }
 
+        loginButton.setOnClickListener { loadLoginPage() }
         captureButton.setOnClickListener { startCapture() }
-        statusText.text = getString(
-            R.string.pattas_scan_symbol,
-            symbols.first(),
-            1,
-            symbols.size
-        )
-        loadSymbol(0)
+        statusText.text = getString(R.string.pattas_scan_login_step)
+        loadLoginPage()
+    }
+
+    private fun loadLoginPage() {
+        capturing = false
+        progress.visibility = View.GONE
+        captureButton.isEnabled = true
+        webView.loadUrl(LOGIN_URL)
     }
 
     private fun startCapture() {
@@ -93,6 +98,7 @@ class PattasScanActivity : AppCompatActivity() {
         currentIndex = 0
         extractAttempts = 0
         captureButton.isEnabled = false
+        loginButton.isEnabled = false
         progress.visibility = View.VISIBLE
         loadSymbol(0)
     }
@@ -124,6 +130,10 @@ class PattasScanActivity : AppCompatActivity() {
             val obj = JSONObject(jsonText)
             if (obj.has("error")) {
                 val err = obj.getString("error")
+                if (obj.optBoolean("needsLogin", false)) {
+                    pauseForLogin()
+                    return
+                }
                 if (obj.optBoolean("retry", false) && extractAttempts < MAX_EXTRACT_ATTEMPTS) {
                     retryExtract(err)
                     return
@@ -160,6 +170,15 @@ class PattasScanActivity : AppCompatActivity() {
         }
     }
 
+    private fun pauseForLogin() {
+        capturing = false
+        progress.visibility = View.GONE
+        captureButton.isEnabled = true
+        loginButton.isEnabled = true
+        statusText.text = getString(R.string.pattas_scan_login_needed)
+        loadLoginPage()
+    }
+
     private fun retryExtract(message: String) {
         statusText.text = message
         handler.postDelayed({ injectExtract() }, RETRY_DELAY_MS)
@@ -169,6 +188,7 @@ class PattasScanActivity : AppCompatActivity() {
         capturing = false
         progress.visibility = View.GONE
         captureButton.isEnabled = true
+        loginButton.isEnabled = true
         statusText.text = message
     }
 
@@ -186,39 +206,90 @@ class PattasScanActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SYMBOLS = "symbols"
         const val EXTRA_ROWS_JSON = "rows_json"
-        const val PAGE_DELAY_MS = 2000L
-        private const val PAGE_LOAD_DELAY_MS = 2000L
+        private const val LOGIN_URL = "https://www.screener.in/login/"
+        const val PAGE_DELAY_MS = 2500L
+        private const val PAGE_LOAD_DELAY_MS = 2500L
         private const val RETRY_DELAY_MS = 1500L
-        private const val MAX_EXTRACT_ATTEMPTS = 10
+        private const val MAX_EXTRACT_ATTEMPTS = 12
 
         private const val EXTRACT_JS = """
             (function() {
               try {
+                var path = window.location.pathname || '';
+                var onLogin = path.indexOf('/login') >= 0;
+                var hasLoginForm = !!(
+                  document.querySelector('#id_username, input[name="username"], form[action*="login"]')
+                );
+                if (onLogin || (hasLoginForm && path.indexOf('/company/') < 0)) {
+                  return JSON.stringify({error: 'Login page — sign in first', needsLogin: true, retry: false});
+                }
+
                 var row = {};
-                var symMatch = window.location.pathname.match(/\/company\/([^/]+)\//);
+                var symMatch = path.match(/\/company\/([^/]+)\//);
                 if (symMatch) row.symbol = symMatch[1].toUpperCase();
-                var items = document.querySelectorAll('li.flex.flex-space-between');
-                items.forEach(function(li) {
+
+                function norm(s) {
+                  return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                }
+
+                function setField(label, val) {
+                  if (!val || val === '-' || val === '—') return;
+                  var n = norm(label);
+                  if (n.indexOf('stock p/e') >= 0 || n === 'p/e' || n === 'pe') row['P/E'] = val;
+                  else if (n.indexOf('dividend yield') >= 0 || n.indexOf('div yld') >= 0) row['Div Yld %'] = val;
+                  else if (n.indexOf('current price') >= 0 || n === 'cmp') row['CMP Rs.'] = val;
+                  else if (n.indexOf('debt') >= 0 && n.indexOf('eq') >= 0) row['Debt / Eq'] = val;
+                  else if (n.indexOf('ind pe') >= 0 || n.indexOf('industry pe') >= 0) row['Ind PE'] = val;
+                  else if (n.indexOf('roe 3') >= 0 || n.indexOf('roe 3yr') >= 0) row['ROE 3Yr %'] = val;
+                  else if (n === 'roce' || n.indexOf('roce %') >= 0) row['ROCE %'] = val;
+                  else if (n === 'roe' || (n.indexOf('roe %') >= 0 && n.indexOf('3') < 0)) row['ROE %'] = val;
+                  else if (n.indexOf('market cap') >= 0) row['Mar Cap Rs.Cr.'] = val;
+                }
+
+                // Top ratio panel (logged-in and guest layouts)
+                document.querySelectorAll('li.flex.flex-space-between, .company-ratios li, #top-ratios li').forEach(function(li) {
+                  var nameEl = li.querySelector('.name, .name span, span.name');
+                  var numEl = li.querySelector('.number, .value .number, span.number');
+                  if (nameEl && numEl) setField(nameEl.innerText, numEl.innerText);
+                });
+
+                // Alternate ratio rows (some logged-in pages)
+                document.querySelectorAll('[data-source="default"]').forEach(function(li) {
                   var nameEl = li.querySelector('.name');
                   var numEl = li.querySelector('.number');
-                  if (!nameEl || !numEl) return;
-                  var name = nameEl.innerText.trim();
-                  var val = numEl.innerText.trim();
-                  if (name === 'Stock P/E') row['P/E'] = val;
-                  else if (name === 'Dividend Yield') row['Div Yld %'] = val;
-                  else if (name === 'Current Price') row['CMP Rs.'] = val;
-                  else if (name === 'ROCE') row['ROCE %'] = val;
-                  else if (name === 'ROE') row['ROE %'] = val;
-                  else if (name === 'Market Cap') row['Mar Cap Rs.Cr.'] = val;
+                  if (nameEl && numEl) setField(nameEl.innerText, numEl.innerText);
                 });
-                var tables = document.querySelectorAll('table.ranges-table tr');
-                tables.forEach(function(tr) {
+
+                // Compounded / ranges table — ROE 3yr
+                document.querySelectorAll('table.ranges-table tr, .ranges-table tr').forEach(function(tr) {
                   var cells = tr.querySelectorAll('td');
-                  if (cells.length >= 2 && cells[0].innerText.indexOf('3 Years') >= 0) {
-                    row['ROE 3Yr %'] = cells[1].innerText.trim();
+                  if (cells.length >= 2) {
+                    var label = cells[0].innerText.trim();
+                    if (label.indexOf('3 Years') >= 0 || label.indexOf('3 Year') >= 0) {
+                      row['ROE 3Yr %'] = cells[1].innerText.trim();
+                    }
                   }
                 });
+
+                // Ratios section table — Debt/Eq row if present
+                var ratios = document.querySelector('#ratios') || document.querySelector('[id*="ratios"]');
+                if (ratios) {
+                  ratios.querySelectorAll('tr').forEach(function(tr) {
+                    var labelCell = tr.querySelector('td.text, td:first-child');
+                    if (!labelCell) return;
+                    var label = labelCell.innerText.trim();
+                    var cells = tr.querySelectorAll('td');
+                    if (cells.length < 2) return;
+                    var val = cells[cells.length - 1].innerText.trim();
+                    setField(label, val);
+                  });
+                }
+
                 if (!row['P/E']) {
+                  var bodyText = document.body ? document.body.innerText : '';
+                  if (bodyText.indexOf('Sign in') >= 0 || bodyText.indexOf('Log in') >= 0) {
+                    return JSON.stringify({error: 'Login required for ratios', needsLogin: true, retry: false});
+                  }
                   return JSON.stringify({error: 'Ratio panel not visible yet', retry: true});
                 }
                 return JSON.stringify({row: row});

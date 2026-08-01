@@ -3,7 +3,7 @@
     <string name="app_name">Gowri Screener</string>
     <string name="tab_home">Home</string>
     <string name="tab_news">News</string>
-    <string name="tab_screener">Screener</string>
+    <string name="tab_screener">Screen</string>
     <string name="tab_swing">Swing</string>
     <string name="action_run_screen">Run</string>
     <string name="action_settings">Settings</string>
@@ -101,6 +101,9 @@
     <string name="pattas_manage_hint">Add or remove symbols — changes apply on the next scan.</string>
     <string name="pattas_add_symbol">Add symbol</string>
     <string name="pattas_scan_title">Pattas capture</string>
+    <string name="pattas_scan_login_step">Step 1: Log in to screener.in in the WebView below (session saved). Step 2: Tap Start Capture.</string>
+    <string name="pattas_scan_open_login">Open login page</string>
+    <string name="pattas_scan_login_needed">Login required — tap Open login page, sign in, then Start Capture.</string>
     <string name="pattas_scan_symbol">Loading %1$s (%2$d of %3$d)…</string>
     <string name="pattas_scan_complete">Captured %1$d symbols — processing…</string>
     <string name="pattas_moat_verified">I verified moat / management quality for this stock</string>
