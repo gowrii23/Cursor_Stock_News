@@ -44,6 +44,15 @@
             </LinearLayout>
 
             <com.google.android.material.chip.Chip
+                android:id="@+id/pattasSectorChip"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:textSize="10sp"
+                android:visibility="gone" />
+
+            <com.google.android.material.chip.Chip
                 android:id="@+id/pattasScoreChip"
                 style="@style/Widget.Material3.Chip.Assist"
                 android:layout_width="wrap_content"

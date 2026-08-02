@@ -65,6 +65,20 @@ class Database:
                 cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_match INTEGER")
             if "blueprint_bonus" not in stock_cols:
                 cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_bonus REAL")
+        pattas_scan_cols = {row[1] for row in cur.execute("PRAGMA table_info(pattas_scan)")}
+        if pattas_scan_cols:
+            if "fields_missing_count" not in pattas_scan_cols:
+                cur.execute("ALTER TABLE pattas_scan ADD COLUMN fields_missing_count INTEGER")
+            if "scrape_health" not in pattas_scan_cols:
+                cur.execute("ALTER TABLE pattas_scan ADD COLUMN scrape_health TEXT")
+        pattas_stock_cols = {row[1] for row in cur.execute("PRAGMA table_info(pattas_stock)")}
+        if pattas_stock_cols:
+            if "sector" not in pattas_stock_cols:
+                cur.execute("ALTER TABLE pattas_stock ADD COLUMN sector TEXT")
+            if "pillar_count" not in pattas_stock_cols:
+                cur.execute("ALTER TABLE pattas_stock ADD COLUMN pillar_count INTEGER")
+            if "missing_fields" not in pattas_stock_cols:
+                cur.execute("ALTER TABLE pattas_stock ADD COLUMN missing_fields TEXT")
         self.conn.commit()
 
     def _init_schema(self) -> None:
@@ -901,13 +915,17 @@ class Database:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO pattas_scan(scanned_at, symbol_count, message)
-            VALUES (?, ?, ?)
+            INSERT INTO pattas_scan(
+              scanned_at, symbol_count, message, fields_missing_count, scrape_health
+            )
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 meta.get("scanned_at"),
                 meta.get("symbol_count") or len(stocks),
                 meta.get("message"),
+                meta.get("fields_missing_count"),
+                json.dumps(meta.get("scrape_health") or {}),
             ),
         )
         scan_id = cur.lastrowid
@@ -918,8 +936,9 @@ class Database:
                 INSERT INTO pattas_stock(
                   scan_id, symbol, name, cmp, pe, div_yield, debt_eq, roe_3y, ind_pe,
                   pattas_score, pillars, peer_medians, peer_group_size,
-                  used_basket_fallback, user_moat_verified, raw_columns
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  used_basket_fallback, user_moat_verified, raw_columns,
+                  sector, pillar_count, missing_fields
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scan_id,
@@ -938,6 +957,9 @@ class Database:
                     1 if pattas.get("used_basket_fallback") else 0,
                     1 if s.get("user_moat_verified") else 0,
                     json.dumps(s.get("raw") or {}),
+                    pattas.get("sector") or s.get("sector"),
+                    pattas.get("pillar_count"),
+                    json.dumps(pattas.get("missing_fields") or []),
                 ),
             )
         self.conn.commit()
@@ -968,20 +990,47 @@ class Database:
         out = []
         for r in rows:
             d = dict(r)
-            for key in ("pillars", "peer_medians", "raw_columns"):
+            for key in ("pillars", "peer_medians", "raw_columns", "missing_fields"):
                 try:
                     d[key] = json.loads(d.get(key) or "null")
                 except Exception:
                     d[key] = None
             d["used_basket_fallback"] = bool(d.get("used_basket_fallback"))
             d["user_moat_verified"] = bool(d.get("user_moat_verified"))
+            raw = d.get("raw_columns")
+            if isinstance(raw, dict) and raw:
+                try:
+                    from pattas_engine import enrich_pattas_row
+
+                    enriched = enrich_pattas_row(
+                        {"symbol": d.get("symbol"), "raw": raw, **raw}
+                    )
+                    for key in (
+                        "pb",
+                        "net_npa",
+                        "gross_npa",
+                        "fcf_yield",
+                        "sector",
+                        "pe",
+                        "div_yield",
+                        "debt_eq",
+                        "roe_3y",
+                    ):
+                        if enriched.get(key) is not None:
+                            d[key] = enriched[key]
+                except Exception:
+                    pass
             pattas = {
                 "pattas_score": d.get("pattas_score", 0),
                 "pillars": d.get("pillars") or {},
                 "peer_medians": d.get("peer_medians") or {},
                 "peer_group_size": d.get("peer_group_size", 0),
                 "used_basket_fallback": d.get("used_basket_fallback", False),
+                "sector": d.get("sector"),
+                "pillar_count": d.get("pillar_count"),
+                "missing_fields": d.get("missing_fields") or [],
             }
+            d["pillar_count"] = d.get("pillar_count") or pattas.get("pillar_count")
             d["pattas"] = pattas
             out.append(d)
         return out

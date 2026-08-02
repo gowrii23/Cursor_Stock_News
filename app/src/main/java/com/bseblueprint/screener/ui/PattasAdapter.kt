@@ -43,6 +43,7 @@ class PattasAdapter(
         private val cmp = itemView.findViewById<TextView>(R.id.pattasCmp)
         private val pillars = itemView.findViewById<TextView>(R.id.pattasPillars)
         private val scoreChip = itemView.findViewById<Chip>(R.id.pattasScoreChip)
+        private val sectorChip = itemView.findViewById<Chip>(R.id.pattasSectorChip)
         private val addBtn = itemView.findViewById<MaterialButton>(R.id.btnAddToPattas)
 
         fun bind(
@@ -54,25 +55,29 @@ class PattasAdapter(
             symbol.text = item.symbol
             name.text = item.name ?: item.symbol
             cmp.text = item.cmp?.let { "₹%.2f".format(it) } ?: "—"
-            scoreChip.text = itemView.context.getString(R.string.pattas_stars, item.pattas_score)
-            pillars.text = formatPillars(item)
+            val total = item.pillar_count.takeIf { it > 0 } ?: 4
+            scoreChip.text = itemView.context.getString(
+                R.string.pattas_stars,
+                item.pattas_score,
+                total
+            )
+            val isFinancial = item.sector == "financial"
+            sectorChip.visibility = View.VISIBLE
+            sectorChip.text = itemView.context.getString(
+                if (isFinancial) R.string.pattas_sector_financial
+                else R.string.pattas_sector_non_financial
+            )
+            pillars.text = formatPillars(item, isFinancial)
             addBtn.visibility = if (showAdd && onAdd != null) View.VISIBLE else View.GONE
             addBtn.setOnClickListener { onAdd?.invoke(item) }
             itemView.setOnClickListener { onClick(item) }
         }
 
-        private fun formatPillars(item: PattasStock): String {
-            fun line(label: String, field: String): String {
-                val val_ = when (field) {
-                    "pe" -> item.pe
-                    "div_yield" -> item.div_yield
-                    "debt_eq" -> item.debt_eq
-                    "roe_3y" -> item.roe_3y
-                    else -> null
-                }
+        private fun formatPillars(item: PattasStock, isFinancial: Boolean): String {
+            fun line(label: String, field: String, value: Double?): String {
                 val med = item.peer_medians[field]
                 val beat = item.pillars[field]
-                val valStr = val_?.let { "%.2f".format(it) } ?: "—"
+                val valStr = value?.let { "%.2f".format(it) } ?: "—"
                 val medStr = med?.let { "%.2f".format(it) } ?: "—"
                 val mark = when (beat) {
                     true -> "✓"
@@ -81,11 +86,34 @@ class PattasAdapter(
                 }
                 return "$mark $label $valStr vs $medStr"
             }
+
+            if (isFinancial) {
+                return listOf(
+                    line("P/B", "pb", item.pb),
+                    line("Div%", "div_yield", item.div_yield),
+                    line("NNPA", "net_npa", item.net_npa),
+                    line("ROE", "roe_3y", item.roe_3y)
+                ).joinToString("\n")
+            }
+
+            val growthMark = when (item.pillars["growth_consistency"]) {
+                true -> "✓"
+                false -> "✗"
+                else -> "?"
+            }
+            val fcfMark = when (item.pillars["fcf_yield"]) {
+                true -> "✓"
+                false -> "✗"
+                else -> "?"
+            }
+            val fcfMed = item.peer_medians["fcf_yield"]?.let { "%.2f".format(it) } ?: "—"
             return listOf(
-                line("PE", "pe"),
-                line("Div%", "div_yield"),
-                line("D/E", "debt_eq"),
-                line("ROE3y", "roe_3y")
+                line("PE", "pe", item.pe),
+                line("Div%", "div_yield", item.div_yield),
+                line("D/E", "debt_eq", item.debt_eq),
+                line("ROE", "roe_3y", item.roe_3y),
+                "$fcfMark FCF yld vs $fcfMed",
+                "$growthMark Growth3y"
             ).joinToString("\n")
         }
     }

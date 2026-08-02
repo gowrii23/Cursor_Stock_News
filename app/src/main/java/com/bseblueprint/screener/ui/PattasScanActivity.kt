@@ -186,7 +186,10 @@ class PattasScanActivity : AppCompatActivity() {
     }
 
     private fun hasMeaningfulData(row: Map<String, Any?>): Boolean {
-        val keys = listOf("P/E", "CMP Rs.", "Div Yld %", "Debt / Eq", "ROCE %", "ROE %", "ROE 3Yr %", "Ind PE")
+        val keys = listOf(
+            "P/E", "CMP Rs.", "Div Yld %", "Debt / Eq", "ROCE %", "ROE %",
+            "ROE 3Yr %", "Ind PE", "Gross NPA %", "Net NPA %", "Price to Book"
+        )
         return keys.any { row[it] != null && row[it].toString().isNotBlank() }
     }
 
@@ -333,6 +336,10 @@ class PattasScanActivity : AppCompatActivity() {
                   else if (n.indexOf('opm 5') >= 0) row['OPM 5Year %'] = val;
                   else if (n.indexOf('cmp') >= 0 && n.indexOf('fcf') >= 0) row['CMP / FCF'] = val;
                   else if (n.indexOf('price to book') >= 0) row['Price to Book'] = val;
+                  else if (n.indexOf('gross npa') >= 0) row['Gross NPA %'] = val;
+                  else if (n.indexOf('net npa') >= 0) row['Net NPA %'] = val;
+                  else if (n.indexOf('capital adequacy') >= 0) row['Capital Adequacy Ratio'] = val;
+                  else if (n.indexOf('net interest margin') >= 0) row['Net Interest Margin'] = val;
                   else if (n.indexOf('face value') >= 0) row['Face Value'] = val;
                 }
 
@@ -382,9 +389,69 @@ class PattasScanActivity : AppCompatActivity() {
                   });
                 }
 
+                function insightMetric(name) {
+                  var re = new RegExp(name + '\\\\s*-\\\\s*([\\\\d.]+%?)', 'i');
+                  var m = bodyText.match(re);
+                  return m ? cleanVal(m[1]) : null;
+                }
+
+                row['Gross NPA %'] = row['Gross NPA %'] || insightMetric('Gross NPA');
+                row['Net NPA %'] = row['Net NPA %'] || insightMetric('Net NPA');
+                row['Capital Adequacy Ratio'] = row['Capital Adequacy Ratio'] || insightMetric('Capital Adequacy Ratio');
+                row['Net Interest Margin'] = row['Net Interest Margin'] || insightMetric('Net Interest Margin');
+
+                function latestAnalysisPct(label) {
+                  var analysis = document.querySelector('#analysis');
+                  if (!analysis) return null;
+                  var rows = analysis.querySelectorAll('tr');
+                  for (var i = 0; i < rows.length; i++) {
+                    var labelCell = rows[i].querySelector('td.text');
+                    if (!labelCell) continue;
+                    if (norm(labelCell.innerText) !== norm(label)) continue;
+                    var cells = rows[i].querySelectorAll('td');
+                    for (var j = cells.length - 1; j >= 0; j--) {
+                      var v = cleanVal(cells[j].innerText);
+                      if (v && v.indexOf('%') >= 0) return v;
+                    }
+                  }
+                  return null;
+                }
+
+                row['Gross NPA %'] = row['Gross NPA %'] || latestAnalysisPct('Gross NPA %');
+                row['Net NPA %'] = row['Net NPA %'] || latestAnalysisPct('Net NPA %');
+
+                function compounded3y(blockName, outKey) {
+                  var tables = document.querySelectorAll('table');
+                  for (var t = 0; t < tables.length; t++) {
+                    var th = tables[t].querySelector('th');
+                    if (!th || th.innerText.indexOf(blockName) < 0) continue;
+                    var trs = tables[t].querySelectorAll('tr');
+                    for (var r = 0; r < trs.length; r++) {
+                      var label = trs[r].querySelector('td');
+                      if (!label) continue;
+                      if (label.innerText.indexOf('3 Year') >= 0) {
+                        var cells = trs[r].querySelectorAll('td');
+                        if (cells.length >= 2) row[outKey] = cleanVal(cells[1].innerText);
+                      }
+                    }
+                  }
+                }
+
+                compounded3y('Compounded Sales Growth', 'Sales Growth 3Y');
+                compounded3y('Compounded Profit Growth', 'Profit Growth 3Y');
+
+                if (!row['Price to Book'] && row['CMP Rs.'] && row['Book Value']) {
+                  var cmpN = parseFloat(String(row['CMP Rs.']).replace(/,/g, ''));
+                  var bvN = parseFloat(String(row['Book Value']).replace(/,/g, ''));
+                  if (!isNaN(cmpN) && !isNaN(bvN) && bvN > 0) {
+                    row['Price to Book'] = (cmpN / bvN).toFixed(2);
+                  }
+                }
+
                 function hasData(r) {
                   return r['P/E'] || r['CMP Rs.'] || r['Div Yld %'] || r['Debt / Eq'] ||
-                    r['ROCE %'] || r['ROE %'] || r['ROE 3Yr %'] || r['Ind PE'];
+                    r['ROCE %'] || r['ROE %'] || r['ROE 3Yr %'] || r['Ind PE'] ||
+                    r['Gross NPA %'] || r['Net NPA %'] || r['Price to Book'];
                 }
 
                 if (!hasData(row)) {

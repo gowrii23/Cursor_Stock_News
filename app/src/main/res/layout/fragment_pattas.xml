@@ -49,6 +49,19 @@
             app:tint="@color/metallic_highlight" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/pattasHealthBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="4dp"
+        android:background="@color/bg_elevated"
+        android:padding="10dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnRunPattasScan"
         style="@style/Widget.Material3.Button.OutlinedButton"

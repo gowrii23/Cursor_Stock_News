@@ -28,11 +28,18 @@ def _merge_screener_fields(row: Dict[str, Any], db: Database) -> Dict[str, Any]:
     merged = dict(row)
     alias_map = {
         "pe": "P/E",
+        "pb": "Price to Book",
         "div_yield": "Div Yld %",
         "debt_eq": "Debt / Eq",
         "roe_3y": "ROE 3Yr %",
         "ind_pe": "Ind PE",
         "cmp": "CMP Rs.",
+        "net_npa": "Net NPA %",
+        "gross_npa": "Gross NPA %",
+        "car": "Capital Adequacy Ratio",
+        "nim": "Net Interest Margin",
+        "sales_var_3y": "Sales Growth 3Y",
+        "profit_var_3y": "Profit Growth 3Y",
         "name": "name",
     }
     for field, raw_key in alias_map.items():
@@ -115,6 +122,15 @@ def _finalize_pattas_scan(
     enriched = _enrich_rows(rows, db)
     report(progress_cb, 55, "Scoring vs peer medians…")
     scored = score_rows(enriched)
+    fields_missing_count = sum(
+        1 for r in scored if (r.get("pattas") or {}).get("missing_fields")
+    )
+    symbols_with_gaps = [
+        r.get("symbol")
+        for r in scored
+        if (r.get("pattas") or {}).get("missing_fields")
+    ]
+    financial_count = sum(1 for r in scored if r.get("sector") == "financial")
     syms = [r["symbol"] for r in scored if r.get("symbol")]
     if syms:
         report(progress_cb, 65, f"Fetching NSE prices for {len(syms)} symbols…")
@@ -126,7 +142,13 @@ def _finalize_pattas_scan(
     meta = {
         "scanned_at": started,
         "symbol_count": len(scored),
-        "message": f"pattas={len(scored)}",
+        "message": f"pattas={len(scored)} financial={financial_count}",
+        "fields_missing_count": fields_missing_count,
+        "scrape_health": {
+            "symbols_with_field_gaps": symbols_with_gaps[:20],
+            "financial_count": financial_count,
+            "non_financial_count": len(scored) - financial_count,
+        },
     }
     db.save_pattas_scan(meta, scored)
     report(progress_cb, 100, f"Done — {len(scored)} Pattas stocks scored")
@@ -144,10 +166,13 @@ _LIST_FIELDS = (
     "name",
     "cmp",
     "pe",
+    "pb",
     "div_yield",
     "debt_eq",
     "roe_3y",
+    "net_npa",
     "ind_pe",
+    "sector",
     "pattas",
     "user_moat_verified",
 )
@@ -157,10 +182,13 @@ def _slim_stock(row: Dict[str, Any]) -> Dict[str, Any]:
     out = {k: row.get(k) for k in _LIST_FIELDS if k in row}
     pattas = row.get("pattas") or {}
     out["pattas_score"] = pattas.get("pattas_score", 0)
+    out["pillar_count"] = pattas.get("pillar_count", 4)
     out["peer_group_size"] = pattas.get("peer_group_size", 0)
     out["used_basket_fallback"] = pattas.get("used_basket_fallback", False)
+    out["sector"] = pattas.get("sector") or row.get("sector")
     out["pillars"] = pattas.get("pillars") or {}
     out["peer_medians"] = pattas.get("peer_medians") or {}
+    out["missing_fields"] = pattas.get("missing_fields") or []
     return out
 
 
@@ -169,6 +197,11 @@ def get_pattas_dashboard_json(db_path: Optional[str] = None) -> str:
     try:
         db.seed_pattas_symbols_if_empty()
         scan = db.latest_pattas_scan()
+        if scan and isinstance(scan.get("scrape_health"), str):
+            try:
+                scan["scrape_health"] = json.loads(scan["scrape_health"])
+            except Exception:
+                scan["scrape_health"] = {}
         stocks = [_slim_stock(s) for s in db.get_pattas_stocks()] if scan else []
         candidates = db.get_pattas_candidates()
         symbol_count = len(db.get_pattas_symbols())

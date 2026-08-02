@@ -34,6 +34,7 @@ class PattasFragment : Fragment() {
     private lateinit var candidatesEmpty: TextView
     private lateinit var candidatesTitle: TextView
     private lateinit var subtitle: TextView
+    private lateinit var healthBanner: TextView
     private lateinit var progress: ProgressBar
     private lateinit var adapter: PattasAdapter
     private lateinit var candidatesAdapter: PattasAdapter
@@ -57,6 +58,7 @@ class PattasFragment : Fragment() {
         candidatesEmpty = view.findViewById(R.id.pattasCandidatesEmpty)
         candidatesTitle = view.findViewById(R.id.pattasCandidatesTitle)
         subtitle = view.findViewById(R.id.pattasSubtitle)
+        healthBanner = view.findViewById(R.id.pattasHealthBanner)
         progress = view.findViewById(R.id.pattasProgress)
 
         adapter = PattasAdapter(onClick = { stock -> callback?.onPattasStockClick(stock) })
@@ -85,6 +87,18 @@ class PattasFragment : Fragment() {
     fun bindState(state: PattasUiState) {
         subtitle.text = state.metaLine.ifBlank {
             getString(R.string.pattas_empty)
+        }
+        val banner = state.healthBanner
+        if (!banner.isNullOrBlank() && banner.startsWith("missing:")) {
+            val count = banner.removePrefix("missing:").toIntOrNull() ?: 0
+            if (count > 0) {
+                healthBanner.visibility = View.VISIBLE
+                healthBanner.text = getString(R.string.pattas_scrape_health_banner, count)
+            } else {
+                healthBanner.visibility = View.GONE
+            }
+        } else {
+            healthBanner.visibility = View.GONE
         }
         adapter.submit(state.stocks)
         val hasStocks = state.stocks.isNotEmpty()

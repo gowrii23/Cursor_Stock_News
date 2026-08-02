@@ -48,6 +48,15 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/detailSector"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <TextView
                 android:id="@+id/detailFallback"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

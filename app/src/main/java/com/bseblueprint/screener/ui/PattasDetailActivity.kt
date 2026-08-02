@@ -57,8 +57,23 @@ class PattasDetailActivity : AppCompatActivity() {
         val score = JsonSafe.int(stock, "pattas_score")
             ?: JsonSafe.int(pattas, "pattas_score")
             ?: 0
+        val pillarCount = JsonSafe.int(stock, "pillar_count")
+            ?: JsonSafe.int(pattas, "pillar_count")
+            ?: 4
         findViewById<TextView>(R.id.detailScore).text =
-            getString(R.string.pattas_stars, score)
+            getString(R.string.pattas_stars, score, pillarCount)
+
+        val sector = JsonSafe.string(stock, "sector") ?: JsonSafe.string(pattas, "sector")
+        val sectorView = findViewById<TextView>(R.id.detailSector)
+        if (!sector.isNullOrBlank()) {
+            sectorView.visibility = View.VISIBLE
+            sectorView.text = getString(
+                if (sector == "financial") R.string.pattas_sector_financial
+                else R.string.pattas_sector_non_financial
+            )
+        } else {
+            sectorView.visibility = View.GONE
+        }
 
         val fallback = JsonSafe.bool(stock, "used_basket_fallback")
             ?: JsonSafe.bool(pattas, "used_basket_fallback")
@@ -71,7 +86,9 @@ class PattasDetailActivity : AppCompatActivity() {
 
         val pillars = JsonSafe.obj(stock, "pillars") ?: JsonSafe.obj(pattas, "pillars")
         val medians = JsonSafe.obj(stock, "peer_medians") ?: JsonSafe.obj(pattas, "peer_medians")
-        findViewById<TextView>(R.id.detailPillars).text = formatPillars(stock, pillars, medians)
+        val isFinancial = sector == "financial"
+        findViewById<TextView>(R.id.detailPillars).text =
+            formatPillars(stock, pillars, medians, isFinancial)
 
         val check = findViewById<MaterialCheckBox>(R.id.checkMoatVerified)
         check.isChecked = (JsonSafe.int(stock, "user_moat_verified") ?: 0) == 1
@@ -85,7 +102,8 @@ class PattasDetailActivity : AppCompatActivity() {
     private fun formatPillars(
         stock: JsonObject,
         pillars: JsonObject?,
-        medians: JsonObject?
+        medians: JsonObject?,
+        isFinancial: Boolean
     ): String {
         fun fieldVal(key: String): String {
             val v = JsonSafe.double(stock, key)
@@ -103,12 +121,24 @@ class PattasDetailActivity : AppCompatActivity() {
                 else -> "?"
             }
         }
-        return listOf(
-            "${mark("pe")} PE ${fieldVal("pe")} vs ${medVal("pe")}",
-            "${mark("div_yield")} Div% ${fieldVal("div_yield")} vs ${medVal("div_yield")}",
-            "${mark("debt_eq")} D/E ${fieldVal("debt_eq")} vs ${medVal("debt_eq")}",
-            "${mark("roe_3y")} ROE3y ${fieldVal("roe_3y")} vs ${medVal("roe_3y")}"
-        ).joinToString("\n")
+
+        return if (isFinancial) {
+            listOf(
+                "${mark("pb")} P/B ${fieldVal("pb")} vs ${medVal("pb")}",
+                "${mark("div_yield")} Div% ${fieldVal("div_yield")} vs ${medVal("div_yield")}",
+                "${mark("net_npa")} NNPA ${fieldVal("net_npa")} vs ${medVal("net_npa")}",
+                "${mark("roe_3y")} ROE ${fieldVal("roe_3y")} vs ${medVal("roe_3y")}"
+            ).joinToString("\n")
+        } else {
+            listOf(
+                "${mark("pe")} PE ${fieldVal("pe")} vs ${medVal("pe")}",
+                "${mark("div_yield")} Div% ${fieldVal("div_yield")} vs ${medVal("div_yield")}",
+                "${mark("debt_eq")} D/E ${fieldVal("debt_eq")} vs ${medVal("debt_eq")}",
+                "${mark("roe_3y")} ROE ${fieldVal("roe_3y")} vs ${medVal("roe_3y")}",
+                "${mark("fcf_yield")} FCF yld vs ${medVal("fcf_yield")}",
+                "${mark("growth_consistency")} Growth3y (3Y sales & profit > 0)"
+            ).joinToString("\n")
+        }
     }
 
     companion object {

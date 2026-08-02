@@ -108,7 +108,7 @@ def process_screener_capture(
         try:
             pattas_syms = {s["symbol"] for s in db.get_pattas_symbols()}
             raw_rows = result.get("all_rows") or result["stocks"]
-            candidates = find_pattas_candidates(raw_rows, pattas_syms, min_pillars=3)
+            candidates = find_pattas_candidates(raw_rows, pattas_syms, min_pillars=4)
             db.save_pattas_candidates(candidates)
         except Exception as e:
             logger.warning("Pattas candidate discovery: %s", e)

@@ -111,6 +111,9 @@
     <string name="pattas_moat_verified">I verified moat / management quality for this stock</string>
     <string name="pattas_pillars_title">Pillar breakdown (vs peer median)</string>
     <string name="pattas_basket_fallback">Basket median (no sector peers found)</string>
-    <string name="pattas_stars">%1$d/4 pillars</string>
+    <string name="pattas_stars">%1$d/%2$d pillars</string>
+    <string name="pattas_sector_financial">Financial</string>
+    <string name="pattas_sector_non_financial">Non-financial</string>
+    <string name="pattas_scrape_health_banner">%1$d symbols had missing fields — log in to screener.in for fuller bank ratios.</string>
     <string name="pattas_edit_list">Edit list</string>
 </resources>
