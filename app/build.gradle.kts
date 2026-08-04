@@ -12,8 +12,8 @@ android {
         applicationId = "com.bseblueprint.screener"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.4.3"
+        versionCode = 18
+        versionName = "1.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {

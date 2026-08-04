@@ -11,6 +11,9 @@ MANUAL_VERIFY_ITEMS = [
     "Related-party transactions within sector norms",
 ]
 
+UNDER_COVERED_MAX_MARKET_CAP_CR = 5000.0
+UNDER_COVERED_MAX_INSTITUTIONAL_PCT = 15.0
+
 # Core fields required for an honest L1 pass (unknown ≠ clean)
 L1_REQUIRED_FIELDS = (
     ("debt_eq", "Debt/Eq"),
@@ -43,6 +46,8 @@ _FIELD_ALIASES: Dict[str, List[str]] = {
     "ind_pe": ["ind pe", "industry pe"],
     "peg": ["peg ratio", "peg"],
     "volume": ["volume"],
+    "fii_hold": ["fii hold %", "fii holding %", "fii hold"],
+    "dii_hold": ["dii hold %", "dii holding %", "dii hold"],
 }
 
 
@@ -90,6 +95,18 @@ def normalize_row(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 def _symbol_from_name(name: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", name.upper())[:20]
+
+
+def _is_under_covered(row: Dict[str, Any]) -> bool:
+    """Low institutional coverage: small cap + low combined FII/DII (missing data → no tag)."""
+    cap = row.get("market_cap")
+    fii = row.get("fii_hold")
+    dii = row.get("dii_hold")
+    if cap is None or fii is None or dii is None:
+        return False
+    if cap > UNDER_COVERED_MAX_MARKET_CAP_CR:
+        return False
+    return (fii + dii) <= UNDER_COVERED_MAX_INSTITUTIONAL_PCT
 
 
 def layer1_filter(row: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
@@ -363,7 +380,9 @@ def _apply_blueprint_tags(
     from blueprint_tagger import tags_for
 
     sym = (row.get("symbol") or "").strip().upper()
-    tags = tags_for(sym, blueprint_map or {})
+    tags = list(tags_for(sym, blueprint_map or {}))
+    if _is_under_covered(row) and "under-covered" not in tags:
+        tags.append("under-covered")
     row["blueprint_tags"] = tags
     row["blueprint_match"] = bool(tags)
     # Ranking-only nudge; does not change score_total or High/Watch/Low tier

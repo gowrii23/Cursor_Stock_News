@@ -1,7 +1,7 @@
 {
   "MEDIASSIST": ["regulatory-moat", "asset-light"],
-  "PROTEAN": ["formalization-play", "regulatory-moat"],
-  "KFINTECH": ["asset-light", "formalization-play"],
+  "PROTEAN": ["formalization-play", "regulatory-moat", "registry-infra"],
+  "KFINTECH": ["asset-light", "formalization-play", "registry-infra"],
   "IRCTC": ["regulatory-moat", "asset-light"],
   "OFSS": ["asset-light"],
   "NAUKRI": ["asset-light", "formalization-play"],
@@ -12,5 +12,21 @@
   "HAL": ["regulatory-moat"],
   "POWERGRID": ["regulatory-moat"],
   "PFC": ["formalization-play"],
-  "RECLTD": ["formalization-play"]
+  "RECLTD": ["formalization-play"],
+  "CAMS": ["registry-infra"],
+  "BSE": ["registry-infra"],
+  "CDSL": ["registry-infra"],
+  "NAVINFLUOR": ["export-moat-chem"],
+  "BALAMINES": ["export-moat-chem"],
+  "RALLIS": ["export-moat-chem"],
+  "PIIND": ["export-moat-chem"],
+  "DEEPAKNTR": ["export-moat-chem"],
+  "AARTIIND": ["export-moat-chem"],
+  "FINPIPE": ["regional-monopoly-materials"],
+  "PRINCEPIPE": ["regional-monopoly-materials"],
+  "APLAPOLLO": ["regional-monopoly-materials"],
+  "SUPREMEIND": ["regional-monopoly-materials"],
+  "BIKAJI": ["branded-food-founder"],
+  "DIAMONDYD": ["branded-food-founder"],
+  "VADILALIND": ["branded-food-founder"]
 }
