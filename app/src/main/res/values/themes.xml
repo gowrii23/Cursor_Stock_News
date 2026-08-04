@@ -17,7 +17,19 @@
         <item name="itemIconTint">@color/bottom_nav_item_color</item>
         <item name="itemTextColor">@color/bottom_nav_item_color</item>
         <item name="itemActiveIndicatorStyle">@style/Widget.Bse.BottomNav.ActiveIndicator</item>
-        <item name="labelVisibilityMode">labeled</item>
+        <item name="labelVisibilityMode">selected</item>
+        <item name="itemIconSize">22dp</item>
+        <item name="itemPaddingTop">2dp</item>
+        <item name="itemPaddingBottom">2dp</item>
+        <item name="itemHorizontalTranslationEnabled">false</item>
+        <item name="itemTextAppearanceActive">@style/TextAppearance.Bse.BottomNav</item>
+        <item name="itemTextAppearanceInactive">@style/TextAppearance.Bse.BottomNav</item>
+    </style>
+
+    <style name="TextAppearance.Bse.BottomNav" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">11sp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
     </style>
 
     <style name="Widget.Bse.BottomNav.ActiveIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">

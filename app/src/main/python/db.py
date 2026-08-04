@@ -65,6 +65,20 @@ class Database:
                 cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_match INTEGER")
             if "blueprint_bonus" not in stock_cols:
                 cur.execute("ALTER TABLE screener_stock ADD COLUMN blueprint_bonus REAL")
+        pattas_scan_cols = {row[1] for row in cur.execute("PRAGMA table_info(pattas_scan)")}
+        if pattas_scan_cols:
+            if "fields_missing_count" not in pattas_scan_cols:
+                cur.execute("ALTER TABLE pattas_scan ADD COLUMN fields_missing_count INTEGER")
+            if "scrape_health" not in pattas_scan_cols:
+                cur.execute("ALTER TABLE pattas_scan ADD COLUMN scrape_health TEXT")
+        pattas_stock_cols = {row[1] for row in cur.execute("PRAGMA table_info(pattas_stock)")}
+        if pattas_stock_cols:
+            if "sector" not in pattas_stock_cols:
+                cur.execute("ALTER TABLE pattas_stock ADD COLUMN sector TEXT")
+            if "pillar_count" not in pattas_stock_cols:
+                cur.execute("ALTER TABLE pattas_stock ADD COLUMN pillar_count INTEGER")
+            if "missing_fields" not in pattas_stock_cols:
+                cur.execute("ALTER TABLE pattas_stock ADD COLUMN missing_fields TEXT")
         self.conn.commit()
 
     def _init_schema(self) -> None:
@@ -207,6 +221,50 @@ class Database:
               also_screens TEXT,
               as_of TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS pattas_symbols (
+              symbol TEXT PRIMARY KEY,
+              name TEXT,
+              added_date TEXT,
+              note TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS pattas_scan (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scanned_at TEXT,
+              symbol_count INTEGER,
+              message TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS pattas_stock (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scan_id INTEGER,
+              symbol TEXT,
+              name TEXT,
+              cmp REAL,
+              pe REAL,
+              div_yield REAL,
+              debt_eq REAL,
+              roe_3y REAL,
+              ind_pe REAL,
+              pattas_score INTEGER,
+              pillars TEXT,
+              peer_medians TEXT,
+              peer_group_size INTEGER,
+              used_basket_fallback INTEGER,
+              user_moat_verified INTEGER DEFAULT 0,
+              raw_columns TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS pattas_candidates (
+              symbol TEXT PRIMARY KEY,
+              name TEXT,
+              pattas_score INTEGER,
+              pillars TEXT,
+              peer_medians TEXT,
+              first_seen_date TEXT,
+              last_seen_date TEXT
+            );
             """
         )
         self.conn.commit()
@@ -311,21 +369,45 @@ class Database:
             )
         self.conn.commit()
 
+    def purge_demo_watchlist(self) -> None:
+        """Remove synthetic [TEST] rows so they never shadow a real EOD screen."""
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM watchlist WHERE ticker = ?", ("[TEST]",))
+        cur.execute("DELETE FROM news_cache WHERE ticker = ?", ("[TEST]",))
+        self.conn.commit()
+
+    def _best_watchlist_date(self) -> Optional[str]:
+        """Latest date with real flags; demo-only dates are skipped when possible."""
+        cur = self.conn.cursor()
+        dates = [
+            r["d"]
+            for r in cur.execute(
+                "SELECT DISTINCT date AS d FROM watchlist ORDER BY date DESC"
+            ).fetchall()
+        ]
+        if not dates:
+            return None
+        for d in dates:
+            row = cur.execute(
+                "SELECT COUNT(*) AS c FROM watchlist WHERE date = ? AND ticker != ?",
+                (d, "[TEST]"),
+            ).fetchone()
+            if row and row["c"] > 0:
+                return d
+        return dates[0]
+
     def get_watchlist(self, date: Optional[str] = None) -> List[Dict[str, Any]]:
         cur = self.conn.cursor()
         if date:
-            rows = cur.execute(
-                "SELECT * FROM watchlist WHERE date = ? ORDER BY conviction_score DESC",
-                (date,),
-            ).fetchall()
+            target_date = date
         else:
-            latest = cur.execute("SELECT MAX(date) AS d FROM watchlist").fetchone()
-            if not latest or not latest["d"]:
+            target_date = self._best_watchlist_date()
+            if not target_date:
                 return []
-            rows = cur.execute(
-                "SELECT * FROM watchlist WHERE date = ? ORDER BY conviction_score DESC",
-                (latest["d"],),
-            ).fetchall()
+        rows = cur.execute(
+            "SELECT * FROM watchlist WHERE date = ? ORDER BY conviction_score DESC",
+            (target_date,),
+        ).fetchall()
         out = []
         for r in rows:
             d = dict(r)
@@ -769,6 +851,280 @@ class Database:
             except Exception:
                 d[key] = None
         return d
+
+    def seed_pattas_symbols_if_empty(self) -> None:
+        if self.get_pattas_symbols():
+            return
+        from datetime import datetime as _dt
+        from pipeline import load_json_asset
+
+        seed = load_json_asset("pattas_universe.json", [])
+        today = _dt.utcnow().date().isoformat()
+        for entry in seed:
+            if isinstance(entry, dict):
+                sym = str(entry.get("symbol") or "").upper()
+                name = entry.get("name")
+            else:
+                sym = str(entry).upper()
+                name = None
+            if sym:
+                self.add_pattas_symbol(sym, name=name, note="seed", added_date=today)
+
+    def get_pattas_symbols(self) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            "SELECT symbol, name, added_date, note FROM pattas_symbols ORDER BY symbol"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_pattas_symbol(
+        self,
+        symbol: str,
+        name: Optional[str] = None,
+        note: Optional[str] = None,
+        added_date: Optional[str] = None,
+    ) -> None:
+        sym = symbol.strip().upper()
+        if not sym:
+            return
+        from datetime import datetime as _dt
+
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO pattas_symbols(symbol, name, added_date, note)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(symbol) DO UPDATE SET
+              name=COALESCE(excluded.name, pattas_symbols.name),
+              note=COALESCE(excluded.note, pattas_symbols.note)
+            """,
+            (sym, name, added_date or _dt.utcnow().date().isoformat(), note),
+        )
+        self.conn.commit()
+
+    def remove_pattas_symbol(self, symbol: str) -> None:
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM pattas_symbols WHERE symbol = ?", (symbol.upper(),))
+        self.conn.commit()
+
+    def save_pattas_scan(
+        self,
+        meta: Dict[str, Any],
+        stocks: List[Dict[str, Any]],
+    ) -> int:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO pattas_scan(
+              scanned_at, symbol_count, message, fields_missing_count, scrape_health
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                meta.get("scanned_at"),
+                meta.get("symbol_count") or len(stocks),
+                meta.get("message"),
+                meta.get("fields_missing_count"),
+                json.dumps(meta.get("scrape_health") or {}),
+            ),
+        )
+        scan_id = cur.lastrowid
+        for s in stocks:
+            pattas = s.get("pattas") or {}
+            cur.execute(
+                """
+                INSERT INTO pattas_stock(
+                  scan_id, symbol, name, cmp, pe, div_yield, debt_eq, roe_3y, ind_pe,
+                  pattas_score, pillars, peer_medians, peer_group_size,
+                  used_basket_fallback, user_moat_verified, raw_columns,
+                  sector, pillar_count, missing_fields
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scan_id,
+                    s.get("symbol"),
+                    s.get("name"),
+                    s.get("cmp"),
+                    s.get("pe"),
+                    s.get("div_yield"),
+                    s.get("debt_eq"),
+                    s.get("roe_3y"),
+                    s.get("ind_pe"),
+                    pattas.get("pattas_score", 0),
+                    json.dumps(pattas.get("pillars") or {}),
+                    json.dumps(pattas.get("peer_medians") or {}),
+                    pattas.get("peer_group_size", 0),
+                    1 if pattas.get("used_basket_fallback") else 0,
+                    1 if s.get("user_moat_verified") else 0,
+                    json.dumps(s.get("raw") or {}),
+                    pattas.get("sector") or s.get("sector"),
+                    pattas.get("pillar_count"),
+                    json.dumps(pattas.get("missing_fields") or []),
+                ),
+            )
+        self.conn.commit()
+        return int(scan_id)
+
+    def latest_pattas_scan(self) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        row = cur.execute(
+            "SELECT * FROM pattas_scan ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_pattas_stocks(self, scan_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        if scan_id is None:
+            latest = self.latest_pattas_scan()
+            if not latest:
+                return []
+            scan_id = latest["id"]
+        rows = cur.execute(
+            """
+            SELECT * FROM pattas_stock
+            WHERE scan_id = ?
+            ORDER BY pattas_score DESC, symbol
+            """,
+            (scan_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for key in ("pillars", "peer_medians", "raw_columns", "missing_fields"):
+                try:
+                    d[key] = json.loads(d.get(key) or "null")
+                except Exception:
+                    d[key] = None
+            d["used_basket_fallback"] = bool(d.get("used_basket_fallback"))
+            d["user_moat_verified"] = bool(d.get("user_moat_verified"))
+            raw = d.get("raw_columns")
+            if isinstance(raw, dict) and raw:
+                try:
+                    from pattas_engine import enrich_pattas_row
+
+                    enriched = enrich_pattas_row(
+                        {"symbol": d.get("symbol"), "raw": raw, **raw}
+                    )
+                    for key in (
+                        "pb",
+                        "net_npa",
+                        "gross_npa",
+                        "fcf_yield",
+                        "sector",
+                        "pe",
+                        "div_yield",
+                        "debt_eq",
+                        "roe_3y",
+                    ):
+                        if enriched.get(key) is not None:
+                            d[key] = enriched[key]
+                except Exception:
+                    pass
+            pattas = {
+                "pattas_score": d.get("pattas_score", 0),
+                "pillars": d.get("pillars") or {},
+                "peer_medians": d.get("peer_medians") or {},
+                "peer_group_size": d.get("peer_group_size", 0),
+                "used_basket_fallback": d.get("used_basket_fallback", False),
+                "sector": d.get("sector"),
+                "pillar_count": d.get("pillar_count"),
+                "missing_fields": d.get("missing_fields") or [],
+            }
+            d["pillar_count"] = d.get("pillar_count") or pattas.get("pillar_count")
+            d["pattas"] = pattas
+            out.append(d)
+        return out
+
+    def get_pattas_stock(self, symbol: str, scan_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        stocks = self.get_pattas_stocks(scan_id=scan_id)
+        sym = symbol.upper()
+        for s in stocks:
+            if s.get("symbol") == sym:
+                return s
+        return None
+
+    def set_pattas_moat_verified(self, symbol: str, verified: bool) -> None:
+        cur = self.conn.cursor()
+        latest = self.latest_pattas_scan()
+        if not latest:
+            return
+        cur.execute(
+            """
+            UPDATE pattas_stock SET user_moat_verified = ?
+            WHERE scan_id = ? AND symbol = ?
+            """,
+            (1 if verified else 0, latest["id"], symbol.upper()),
+        )
+        self.conn.commit()
+
+    def save_pattas_candidates(self, candidates: List[Dict[str, Any]]) -> None:
+        from datetime import datetime as _dt
+
+        today = _dt.utcnow().date().isoformat()
+        cur = self.conn.cursor()
+        seen = set()
+        for c in candidates:
+            sym = (c.get("symbol") or "").upper()
+            if not sym:
+                continue
+            seen.add(sym)
+            pattas = c.get("pattas") or {}
+            existing = cur.execute(
+                "SELECT first_seen_date FROM pattas_candidates WHERE symbol = ?",
+                (sym,),
+            ).fetchone()
+            first = existing["first_seen_date"] if existing else today
+            cur.execute(
+                """
+                INSERT INTO pattas_candidates(
+                  symbol, name, pattas_score, pillars, peer_medians,
+                  first_seen_date, last_seen_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                  name=excluded.name,
+                  pattas_score=excluded.pattas_score,
+                  pillars=excluded.pillars,
+                  peer_medians=excluded.peer_medians,
+                  last_seen_date=excluded.last_seen_date
+                """,
+                (
+                    sym,
+                    c.get("name"),
+                    pattas.get("pattas_score", 0),
+                    json.dumps(pattas.get("pillars") or {}),
+                    json.dumps(pattas.get("peer_medians") or {}),
+                    first,
+                    today,
+                ),
+            )
+        if seen:
+            placeholders = ",".join("?" for _ in seen)
+            cur.execute(
+                f"DELETE FROM pattas_candidates WHERE symbol NOT IN ({placeholders})",
+                tuple(seen),
+            )
+        else:
+            cur.execute("DELETE FROM pattas_candidates")
+        self.conn.commit()
+
+    def get_pattas_candidates(self) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            """
+            SELECT * FROM pattas_candidates
+            ORDER BY pattas_score DESC, symbol
+            """
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for key in ("pillars", "peer_medians"):
+                try:
+                    d[key] = json.loads(d.get(key) or "null")
+                except Exception:
+                    d[key] = None
+            out.append(d)
+        return out
 
     def set_setting(self, key: str, value: Any) -> None:
         cur = self.conn.cursor()

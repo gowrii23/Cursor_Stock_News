@@ -49,6 +49,7 @@
   {"symbol": "BLUESTARCO", "name": "Blue Star"},
   {"symbol": "CUMMINSIND", "name": "Cummins India"},
   {"symbol": "PERSISTENT", "name": "Persistent Systems"},
+<<<<<<< HEAD
   {"symbol": "NATIONALUM", "name": "NALCO"},
   {"symbol": "CAMS", "name": "Computer Age Management Services"},
   {"symbol": "BSE", "name": "BSE Ltd"},
@@ -61,4 +62,7 @@
   {"symbol": "BIKAJI", "name": "Bikaji Foods International"},
   {"symbol": "DIAMONDYD", "name": "Prataap Snacks"},
   {"symbol": "VADILALIND", "name": "Vadilal Industries"}
+=======
+  {"symbol": "NATIONALUM", "name": "NALCO"}
+>>>>>>> origin/main
 ]

@@ -39,7 +39,7 @@ _FIELD_ALIASES: Dict[str, List[str]] = {
     "pledged_pct": ["pledged %", "prom. pledged %"],
     "promoter_hold": ["prom. hold. %", "promoter holding"],
     "promoter_change": ["change in prom hold %", "change in promoter holding"],
-    "roe_3y": ["roe 3yr %", "roe 3y"],
+    "roe_3y": ["roe 3yr %", "roe 3y", "roe 10yr", "roe 10 yr"],
     "sales_var_3y": ["sales var 3yrs %", "sales growth 3years"],
     "profit_var_3y": ["profit var 3yrs %", "profit growth 3years"],
     "cmp_fcf": ["cmp / fcf", "price to fcf"],

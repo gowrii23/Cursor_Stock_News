@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Gowri Screener</string>
-    <string name="tab_home">Home</string>
+    <string name="tab_flags">Flags</string>
     <string name="tab_news">News</string>
-    <string name="tab_screener">Screener</string>
+    <string name="tab_screener">Screen</string>
     <string name="tab_swing">Swing</string>
     <string name="action_run_screen">Run</string>
     <string name="action_settings">Settings</string>
@@ -88,4 +88,32 @@
     <string name="swing_progress_title">Running swing screen</string>
     <string name="swing_detail_signals">Signals</string>
     <string name="swing_detail_metrics">Metrics / stop hint</string>
+    <string name="tab_pattas">Pattas</string>
+    <string name="pattas_empty">No Pattas scan yet.\nTap Run Scan to capture your circle-of-competence list.</string>
+    <string name="pattas_disclaimer">Your interpretation of a value + moat lens, scored against peers within this list — not investment advice, not a reproduction of any published methodology.</string>
+    <string name="pattas_run_scan">Run Pattas Scan</string>
+    <string name="pattas_progress_title">Running Pattas scan</string>
+    <string name="pattas_list_empty">No scored stocks yet.</string>
+    <string name="pattas_candidates_title">PATTAS TO BE (%1$d)</string>
+    <string name="pattas_candidates_empty">Run a Screener-tab scan first — candidates appear from the full universe.</string>
+    <string name="pattas_add_to_list">Add to Pattas</string>
+    <string name="pattas_manage_title">Manage Pattas List</string>
+    <string name="pattas_manage_hint">Add or remove symbols — changes apply on the next scan.</string>
+    <string name="pattas_add_symbol">Add symbol</string>
+    <string name="pattas_scan_title">Pattas capture</string>
+    <string name="pattas_scan_login_step">Step 1: Log in to screener.in in the WebView below (session saved). Step 2: Tap Start Capture.</string>
+    <string name="pattas_scan_open_login">Open login page</string>
+    <string name="pattas_scan_login_needed">Login required — tap Open login page, sign in, then Start Capture.</string>
+    <string name="pattas_scan_symbol">Loading %1$s (%2$d of %3$d)…</string>
+    <string name="pattas_scan_complete">Captured %1$d symbols — processing…</string>
+    <string name="pattas_scan_skipped">Skipped %1$s (%2$s)</string>
+    <string name="pattas_scan_complete_with_skips">Captured %1$d symbols (%2$d skipped) — processing…</string>
+    <string name="pattas_moat_verified">I verified moat / management quality for this stock</string>
+    <string name="pattas_pillars_title">Pillar breakdown (vs peer median)</string>
+    <string name="pattas_basket_fallback">Basket median (no sector peers found)</string>
+    <string name="pattas_stars">%1$d/%2$d pillars</string>
+    <string name="pattas_sector_financial">Financial</string>
+    <string name="pattas_sector_non_financial">Non-financial</string>
+    <string name="pattas_scrape_health_banner">%1$d symbols had missing fields — log in to screener.in for fuller bank ratios.</string>
+    <string name="pattas_edit_list">Edit list</string>
 </resources>
