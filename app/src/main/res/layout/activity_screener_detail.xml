@@ -47,28 +47,11 @@
             android:textSize="28sp"
             android:textStyle="bold" />
 
-        <LinearLayout
+        <include
+            layout="@layout/include_ask_ai_button_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAskAi"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/ask_ai" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnClearAskAi"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:text="@string/ask_ai_clear_cache" />
-        </LinearLayout>
+            android:layout_marginTop="12dp" />
 
         <ProgressBar
             android:id="@+id/askAiProgress"
