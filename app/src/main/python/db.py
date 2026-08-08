@@ -276,6 +276,18 @@ class Database:
               raw TEXT,
               PRIMARY KEY (symbol, date)
             );
+
+            CREATE TABLE IF NOT EXISTS concall_cache (
+              symbol TEXT PRIMARY KEY,
+              period TEXT,
+              transcript_url TEXT,
+              transcript_excerpt TEXT,
+              announcements_json TEXT,
+              qual_summary_json TEXT,
+              concall_list_json TEXT,
+              status TEXT,
+              fetched_at TEXT
+            );
             """
         )
         self.conn.commit()
@@ -1202,6 +1214,77 @@ class Database:
             "confidence": d.get("confidence") or 0,
             "reasoning": d.get("reasoning") or "",
             "key_risk": d.get("key_risk") or "",
+        }
+
+    def save_concall_cache(self, symbol: str, record: Dict[str, Any]) -> None:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO concall_cache(
+              symbol, period, transcript_url, transcript_excerpt,
+              announcements_json, qual_summary_json, concall_list_json,
+              status, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol) DO UPDATE SET
+              period=excluded.period,
+              transcript_url=excluded.transcript_url,
+              transcript_excerpt=excluded.transcript_excerpt,
+              announcements_json=excluded.announcements_json,
+              qual_summary_json=excluded.qual_summary_json,
+              concall_list_json=excluded.concall_list_json,
+              status=excluded.status,
+              fetched_at=excluded.fetched_at
+            """,
+            (
+                symbol.upper(),
+                record.get("period"),
+                record.get("transcript_url"),
+                record.get("transcript_excerpt"),
+                json.dumps(record.get("announcements") or [], default=str),
+                json.dumps(record.get("qual_summary"), default=str)
+                if record.get("qual_summary") is not None
+                else None,
+                json.dumps(record.get("concall_list") or [], default=str),
+                record.get("status") or "ok",
+                record.get("fetched_at"),
+            ),
+        )
+        self.conn.commit()
+
+    def get_concall_cache(self, symbol: str) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        row = cur.execute(
+            """
+            SELECT period, transcript_url, transcript_excerpt,
+                   announcements_json, qual_summary_json, concall_list_json,
+                   status, fetched_at
+            FROM concall_cache WHERE symbol = ?
+            """,
+            (symbol.upper(),),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+
+        def _loads(val: Any, default: Any) -> Any:
+            if val in (None, ""):
+                return default
+            try:
+                return json.loads(val)
+            except Exception:
+                return default
+
+        return {
+            "symbol": symbol.upper(),
+            "status": d.get("status") or "ok",
+            "period": d.get("period"),
+            "transcript_url": d.get("transcript_url"),
+            "transcript_excerpt": d.get("transcript_excerpt") or "",
+            "transcript_chars": len(d.get("transcript_excerpt") or ""),
+            "announcements": _loads(d.get("announcements_json"), []),
+            "qual_summary": _loads(d.get("qual_summary_json"), None),
+            "concall_list": _loads(d.get("concall_list_json"), []),
+            "fetched_at": d.get("fetched_at"),
         }
 
     def close(self) -> None:

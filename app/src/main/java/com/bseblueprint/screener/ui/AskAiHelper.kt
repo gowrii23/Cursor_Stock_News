@@ -7,6 +7,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
+import com.bseblueprint.screener.bridge.RunProgressReporter
 import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,7 @@ object AskAiHelper {
         symbolProvider: () -> String,
         btnAsk: MaterialButton,
         progress: ProgressBar,
+        txtStatus: TextView,
         card: View,
         txtVerdict: TextView,
         txtReasoning: TextView,
@@ -30,16 +32,26 @@ object AskAiHelper {
         txtDisclaimer.text = activity.getString(R.string.ask_ai_disclaimer)
         card.visibility = View.GONE
         progress.visibility = View.GONE
+        txtStatus.visibility = View.GONE
 
         btnAsk.setOnClickListener {
             val symbol = symbolProvider().trim()
             if (symbol.isEmpty()) return@setOnClickListener
             progress.visibility = View.VISIBLE
+            txtStatus.visibility = View.VISIBLE
+            txtStatus.text = activity.getString(R.string.ask_ai_loading)
             btnAsk.isEnabled = false
             activity.lifecycleScope.launch {
                 try {
+                    val reporter = RunProgressReporter { _, message ->
+                        txtStatus.text = message
+                    }
                     val result = withContext(Dispatchers.IO) {
-                        PythonBridge.askAiVerdict(symbol, forceRefresh = false)
+                        PythonBridge.askAiVerdict(
+                            symbol,
+                            forceRefresh = false,
+                            reporter = reporter
+                        )
                     }
                     card.visibility = View.VISIBLE
                     val status = JsonSafe.string(result, "status")
@@ -76,6 +88,7 @@ object AskAiHelper {
                     txtRisk.text = ""
                 } finally {
                     progress.visibility = View.GONE
+                    txtStatus.visibility = View.GONE
                     btnAsk.isEnabled = true
                 }
             }

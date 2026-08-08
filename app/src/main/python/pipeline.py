@@ -564,12 +564,8 @@ def get_settings_json(db_path: Optional[str] = None) -> str:
             "require_charging",
             "exclude_keywords",
             "candidate_keywords",
-            "hf_token",
         ]
         out = {k: db.get_setting(k) for k in keys}
-        token = out.get("hf_token")
-        out["hf_token"] = str(token).strip() if token else ""
-        out["hf_token_set"] = bool(out["hf_token"])
         out["blueprint_tags"] = load_json_asset("blueprint_tags.json", {})
         return json.dumps(out)
     finally:
@@ -581,20 +577,31 @@ def save_settings_json(payload: str, db_path: Optional[str] = None) -> str:
     try:
         data = json.loads(payload)
         for k, v in data.items():
-            if k in ("hf_token_set", "hf_token_hint"):
+            if k in ("hf_token", "hf_token_set", "hf_token_hint", "gemini_key"):
                 continue
             if k == "blueprint_tags":
                 # Persist override under HOME
                 path = os.path.join(os.environ.get("HOME", ""), "blueprint_tags.json")
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(v, f, indent=2)
-            elif k == "hf_token":
-                db.set_setting("hf_token", str(v).strip() if v is not None else "")
             else:
                 db.set_setting(k, v)
         return json.dumps({"status": "ok"})
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
+    finally:
+        db.close()
+
+
+def pop_legacy_hf_token_json(db_path: Optional[str] = None) -> str:
+    """One-time migration: read legacy hf_token from DB and clear it."""
+    db = init_db(db_path)
+    try:
+        token = db.get_setting("hf_token", None)
+        value = str(token).strip() if token else ""
+        if value:
+            db.set_setting("hf_token", "")
+        return json.dumps({"token": value})
     finally:
         db.close()
 

@@ -87,6 +87,16 @@
                 android:layout_marginTop="8dp"
                 android:visibility="gone" />
 
+            <TextView
+                android:id="@+id/txtAskAiStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_horizontal"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:id="@+id/askAiCard"
                 android:layout_width="match_parent"

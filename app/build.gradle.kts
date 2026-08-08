@@ -12,8 +12,8 @@ android {
         applicationId = "com.bseblueprint.screener"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.7.2"
+        versionCode = 24
+        versionName = "1.7.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -72,6 +72,7 @@ chaquopy {
             install("feedparser")
             install("requests")
             install("certifi")
+            install("pypdf")
         }
     }
 }
@@ -93,4 +94,5 @@ dependencies {
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

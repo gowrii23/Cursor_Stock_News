@@ -7,6 +7,7 @@ import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.util.JsonSafe
+import com.bseblueprint.screener.util.SecureTokenStore
 import com.bseblueprint.screener.work.DailyScreenScheduler
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -35,6 +36,7 @@ class SettingsActivity : AppCompatActivity() {
         val edtCandidate = findViewById<TextInputEditText>(R.id.edtCandidateKeywords)
         val edtBlueprint = findViewById<TextInputEditText>(R.id.edtBlueprintJson)
         val edtHfToken = findViewById<TextInputEditText>(R.id.edtHfToken)
+        val edtGeminiKey = findViewById<TextInputEditText>(R.id.edtGeminiKey)
         val swWifi = findViewById<MaterialSwitch>(R.id.swRequireWifi)
         val swCharge = findViewById<MaterialSwitch>(R.id.swRequireCharging)
         val btnSave = findViewById<MaterialButton>(R.id.btnSave)
@@ -60,7 +62,8 @@ class SettingsActivity : AppCompatActivity() {
                 edtBlueprint.setText(
                     if (bp != null && !bp.isJsonNull) bp.toString() else "{}"
                 )
-                edtHfToken.setText(JsonSafe.string(settings, "hf_token").orEmpty())
+                edtHfToken.setText(SecureTokenStore.getHfToken(this@SettingsActivity))
+                edtGeminiKey.setText(SecureTokenStore.getGeminiKey(this@SettingsActivity))
                 swWifi.isChecked = jsonBool(settings, "require_wifi", true)
                 swCharge.isChecked = jsonBool(settings, "require_charging", false)
             } catch (t: Throwable) {
@@ -81,7 +84,6 @@ class SettingsActivity : AppCompatActivity() {
                             ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
                         "require_wifi" to swWifi.isChecked,
                         "require_charging" to swCharge.isChecked,
-                        "hf_token" to (edtHfToken.text?.toString()?.trim().orEmpty()),
                         "blueprint_tags" to com.google.gson.JsonParser
                             .parseString(edtBlueprint.text?.toString() ?: "{}")
                             .asJsonObject
@@ -95,6 +97,11 @@ class SettingsActivity : AppCompatActivity() {
                             }
                     )
                     withContext(Dispatchers.IO) { PythonBridge.saveSettings(payload) }
+                    SecureTokenStore.save(
+                        this@SettingsActivity,
+                        hf = edtHfToken.text?.toString()?.trim().orEmpty(),
+                        gemini = edtGeminiKey.text?.toString()?.trim().orEmpty()
+                    )
                     getSharedPreferences("screener_prefs", MODE_PRIVATE).edit()
                         .putBoolean("require_wifi", swWifi.isChecked)
                         .putBoolean("require_charging", swCharge.isChecked)
