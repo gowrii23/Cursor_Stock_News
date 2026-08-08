@@ -11,6 +11,7 @@ object AskAiSourceFooter {
         if (cached) return "Cached today · tap Re-ask to refresh"
 
         val qual = JsonSafe.string(sources, "qual_status").orEmpty()
+        val qualDetail = JsonSafe.string(sources, "qual_detail").orEmpty()
         val period = JsonSafe.string(sources, "concall_date").orEmpty()
         val chars = JsonSafe.int(sources, "transcript_chars") ?: 0
         val method = JsonSafe.string(sources, "transcript_method").orEmpty()
@@ -23,15 +24,24 @@ object AskAiSourceFooter {
                 if (method.isNotBlank()) append(" ($method)")
                 append(" · Gemini used")
             }
-            "skipped_no_key" -> "Qual: skipped (no Gemini key)"
-            "skipped_rate_limit" -> "Qual: skipped (Gemini rate limit)"
+            "skipped_no_key" -> withDetail("Qual: skipped (no Gemini key)", qualDetail)
+            "skipped_rate_limit" -> withDetail("Qual: skipped (Gemini rate limit)", qualDetail)
+            "skipped_disabled" -> withDetail("Qual: skipped (Gemini off)", qualDetail)
             "skipped_no_transcript" -> "Transcript: unavailable · quant + announcements only"
-            "skipped_gemini_error" -> "Qual: skipped (Gemini error) · transcript $kChars chars"
+            "skipped_gemini_error" -> withDetail(
+                "Qual: skipped (Gemini error) · transcript $kChars chars",
+                qualDetail
+            )
             else -> {
                 if (chars > 0) "Transcript $kChars chars ($method) · qual not run"
                 else "Quant-only · no transcript extracted"
             }
         }
+    }
+
+    private fun withDetail(prefix: String, detail: String): String {
+        val trimmed = detail.trim()
+        return if (trimmed.isBlank()) prefix else "$prefix — $trimmed"
     }
 
     fun formatQualContext(qual: JsonObject?): String {

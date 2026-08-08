@@ -59,7 +59,16 @@ def _call_with_backoff(fn, *args, max_retries: int = 3, **kwargs):
 
 
 class _RateLimitError(Exception):
-    pass
+    def __init__(self, detail: str = "rate limit"):
+        self.detail = detail
+        super().__init__(detail)
+
+
+class _GeminiApiError(Exception):
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
 
 
 def _strip_html(text: str) -> str:
@@ -192,6 +201,34 @@ def _extract_pdf_text(data: bytes, max_chars: int = MAX_TRANSCRIPT_CHARS) -> str
         return ""
 
 
+def _gemini_error_detail(status_code: int, body: Any) -> str:
+    if status_code == 429:
+        return "HTTP 429 Too Many Requests — free tier limit (wait ~1 min or enable billing)"
+    if status_code == 401:
+        return "HTTP 401 — invalid Gemini API key"
+    if status_code == 403:
+        return "HTTP 403 — Gemini API key not allowed for this model/project"
+    if status_code == 400:
+        msg = ""
+        if isinstance(body, dict):
+            err = body.get("error") or {}
+            if isinstance(err, dict):
+                msg = str(err.get("message") or err.get("status") or "")
+        if msg:
+            return f"HTTP 400 — {msg[:120]}"
+        return "HTTP 400 — bad request (prompt or JSON mode rejected)"
+    if status_code >= 500:
+        return f"HTTP {status_code} — Gemini server error, retry later"
+    msg = ""
+    if isinstance(body, dict):
+        err = body.get("error") or {}
+        if isinstance(err, dict):
+            msg = str(err.get("message") or "")
+    if msg:
+        return f"HTTP {status_code} — {msg[:120]}"
+    return f"HTTP {status_code} — Gemini request failed"
+
+
 def _summarize_with_gemini(
     transcript_text: str,
     announcements: List[Dict[str, str]],
@@ -230,15 +267,19 @@ def _summarize_with_gemini(
             timeout=40,
         )
         if resp.status_code == 429:
-            raise _RateLimitError("Gemini rate limit")
+            raise _RateLimitError(_gemini_error_detail(429, None))
         if resp.status_code != 200:
-            return None
+            try:
+                err_body = resp.json()
+            except Exception:
+                err_body = None
+            raise _GeminiApiError(resp.status_code, _gemini_error_detail(resp.status_code, err_body))
         body = resp.json()
         text = ""
         try:
             text = body["candidates"][0]["content"]["parts"][0]["text"]
         except Exception:
-            return None
+            raise _GeminiApiError(0, "Gemini returned no text (safety block or empty response)")
         try:
             return json.loads(text)
         except Exception:
@@ -246,9 +287,13 @@ def _summarize_with_gemini(
 
     try:
         return _call_with_backoff(_post)
-    except Exception:
+    except _RateLimitError:
+        raise
+    except _GeminiApiError:
+        raise
+    except Exception as e:
         logger.debug("Gemini qual summary failed", exc_info=True)
-        return None
+        raise _GeminiApiError(0, str(e)[:120] or "Gemini request failed") from e
 
 
 def _pick_latest_concall(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -303,12 +348,14 @@ def build_sources_used(
     *,
     cached: bool = False,
     qual_status: Optional[str] = None,
+    qual_detail: Optional[str] = None,
 ) -> Dict[str, Any]:
     return {
         "concall_date": record.get("period"),
         "transcript_chars": int(record.get("transcript_chars") or 0),
         "transcript_method": record.get("transcript_method") or "unavailable",
         "qual_status": qual_status or record.get("qual_status") or "skipped_no_transcript",
+        "qual_detail": qual_detail or record.get("qual_detail") or "",
         "cached": cached,
     }
 
@@ -343,6 +390,7 @@ def get_or_fetch_concall(
     progress_cb: Any = None,
     webview_transcript_text: str = "",
     webview_pdf_base64: str = "",
+    use_gemini: bool = True,
 ) -> Dict[str, Any]:
     """Return latest concall context for a symbol (cached up to CACHE_DAYS)."""
     sym = symbol.strip().upper()
@@ -401,10 +449,14 @@ def get_or_fetch_concall(
             report(progress_cb, 20, "Transcript PDF unavailable — using announcements")
 
     qual_summary: Optional[Dict[str, Any]] = None
+    qual_detail = ""
     has_gemini = bool((gemini_key or "").strip())
     has_qual_input = bool(transcript_text or announcements)
 
-    if has_gemini and has_qual_input:
+    if not use_gemini:
+        qual_status = "skipped_disabled"
+        qual_detail = "Gemini toggled off for this Ask AI"
+    elif has_gemini and has_qual_input:
         report(progress_cb, 30, "Summarizing with Gemini…")
         try:
             qual_summary = _summarize_with_gemini(
@@ -414,12 +466,19 @@ def get_or_fetch_concall(
                 qual_status = "used"
             else:
                 qual_status = "skipped_gemini_error"
-        except _RateLimitError:
+                qual_detail = "Gemini returned empty summary"
+        except _RateLimitError as e:
             qual_status = "skipped_rate_limit"
-        except Exception:
+            qual_detail = e.detail
+        except _GeminiApiError as e:
             qual_status = "skipped_gemini_error"
+            qual_detail = e.detail
+        except Exception as e:
+            qual_status = "skipped_gemini_error"
+            qual_detail = str(e)[:120] or "Gemini request failed"
     elif has_qual_input and not has_gemini:
         qual_status = "skipped_no_key"
+        qual_detail = "No Gemini API key saved in Settings"
     elif not has_qual_input:
         qual_status = "skipped_no_transcript"
 
@@ -431,6 +490,7 @@ def get_or_fetch_concall(
         "transcript_chars": len(transcript_text),
         "transcript_method": transcript_method,
         "qual_status": qual_status,
+        "qual_detail": qual_detail,
         "transcript_excerpt": transcript_text[:2500] if transcript_text else "",
         "announcements": announcements,
         "concall_list": concalls[:6],

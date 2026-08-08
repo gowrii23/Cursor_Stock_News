@@ -224,7 +224,9 @@ object PythonBridge {
         forceRefresh: Boolean = false,
         reporter: RunProgressReporter? = null,
         webviewTranscriptText: String = "",
-        webviewPdfBase64: String = ""
+        webviewPdfBase64: String = "",
+        useHf: Boolean = true,
+        useGemini: Boolean = true
     ): JsonObject {
         val ctx = requireContext()
         val raw = Python.getInstance().getModule("llm_advisor")
@@ -237,7 +239,9 @@ object PythonBridge {
                 forceRefresh,
                 reporter,
                 webviewTranscriptText,
-                webviewPdfBase64
+                webviewPdfBase64,
+                useHf,
+                useGemini
             )
             .toString()
         return JsonParser.parseString(raw).asJsonObject

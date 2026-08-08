@@ -231,6 +231,84 @@ def build_stock_payload(db: Database, symbol: str) -> Dict[str, Any]:
     return payload
 
 
+def _gemini_only_verdict(
+    db: Database,
+    sym: str,
+    *,
+    gemini_key: str,
+    force_refresh: bool,
+    progress_cb: Any,
+    webview_transcript_text: str,
+    webview_pdf_base64: str,
+) -> Dict[str, Any]:
+    """Fetch concall/transcript + optional Gemini qual when HF toggle is off."""
+    concall_record: Dict[str, Any] = {}
+    if get_or_fetch_concall:
+        try:
+            concall_record = get_or_fetch_concall(
+                db,
+                sym,
+                gemini_key=gemini_key,
+                force_refresh=force_refresh or bool(webview_pdf_base64 or webview_transcript_text),
+                progress_cb=progress_cb,
+                webview_transcript_text=webview_transcript_text,
+                webview_pdf_base64=webview_pdf_base64,
+                use_gemini=True,
+            )
+            if concall_record.get("status") == "webview_needed":
+                return {
+                    "status": "needs_webview",
+                    "verdict": "ERROR",
+                    "confidence": 0,
+                    "reasoning": "Opening transcript in browser view…",
+                    "key_risk": "",
+                    "cached": False,
+                    "symbol": sym,
+                    "transcript_url": concall_record.get("transcript_url"),
+                    "sources_used": build_sources_used(concall_record, cached=False)
+                    if build_sources_used
+                    else {},
+                }
+        except Exception:
+            logger.debug("concall fetch failed for gemini-only %s", sym, exc_info=True)
+            concall_record = {}
+
+    sources_used = (
+        build_sources_used(concall_record, cached=False)
+        if build_sources_used
+        else {}
+    )
+    qual_context = concall_record.get("qual_summary")
+    qual_status = str(concall_record.get("qual_status") or "")
+    if qual_context:
+        reasoning = "Hugging Face off — Gemini qualitative summary only (no BUY/WATCH/AVOID verdict)."
+        verdict = "QUAL_ONLY"
+    elif qual_status == "skipped_rate_limit":
+        reasoning = "Hugging Face off — Gemini rate limited. See footer for details."
+        verdict = "QUAL_SKIPPED"
+    elif qual_status == "skipped_disabled":
+        reasoning = "Hugging Face off — Gemini toggle was off during fetch."
+        verdict = "QUAL_SKIPPED"
+    elif qual_status == "skipped_no_key":
+        reasoning = "Hugging Face off — add a Gemini key in Settings for qual summary."
+        verdict = "QUAL_SKIPPED"
+    else:
+        reasoning = "Hugging Face off — transcript fetched; Gemini qual not available."
+        verdict = "QUAL_SKIPPED"
+
+    return {
+        "status": "gemini_only",
+        "verdict": verdict,
+        "confidence": 0,
+        "reasoning": reasoning,
+        "key_risk": "No HF verdict — enable HF toggle for BUY/WATCH/AVOID",
+        "cached": False,
+        "symbol": sym,
+        "sources_used": sources_used,
+        "qual_context": qual_context,
+    }
+
+
 def get_verdict(
     db: Database,
     symbol: str,
@@ -240,10 +318,33 @@ def get_verdict(
     progress_cb: Any = None,
     webview_transcript_text: str = "",
     webview_pdf_base64: str = "",
+    use_hf: bool = True,
+    use_gemini: bool = True,
 ) -> Dict[str, Any]:
     """Cached daily HF verdict for a symbol. Manual trigger only."""
     sym = symbol.strip().upper()
     today = datetime.utcnow().date().isoformat()
+
+    if not use_hf:
+        if not use_gemini:
+            return {
+                "status": "hf_disabled",
+                "verdict": "ERROR",
+                "confidence": 0,
+                "reasoning": "Both providers are off — turn on HF or Gemini next to Ask AI.",
+                "key_risk": "No AI requested",
+                "cached": False,
+                "symbol": sym,
+            }
+        return _gemini_only_verdict(
+            db,
+            sym,
+            gemini_key=gemini_key,
+            force_refresh=force_refresh,
+            progress_cb=progress_cb,
+            webview_transcript_text=webview_transcript_text,
+            webview_pdf_base64=webview_pdf_base64,
+        )
 
     token = (hf_token or "").strip()
     if not token:
@@ -290,11 +391,12 @@ def get_verdict(
             concall_record = get_or_fetch_concall(
                 db,
                 sym,
-                gemini_key=gemini_key,
+                gemini_key=gemini_key if use_gemini else "",
                 force_refresh=force_refresh or bool(webview_pdf_base64 or webview_transcript_text),
                 progress_cb=progress_cb,
                 webview_transcript_text=webview_transcript_text,
                 webview_pdf_base64=webview_pdf_base64,
+                use_gemini=use_gemini,
             )
             if concall_record.get("status") == "webview_needed":
                 return {
@@ -401,6 +503,8 @@ def ask_ai_verdict_json(
     progress_cb: Any = None,
     webview_transcript_text: str = "",
     webview_pdf_base64: str = "",
+    use_hf: bool = True,
+    use_gemini: bool = True,
 ) -> str:
     db = Database(db_path)
     try:
@@ -414,6 +518,8 @@ def ask_ai_verdict_json(
                 progress_cb=progress_cb,
                 webview_transcript_text=webview_transcript_text,
                 webview_pdf_base64=webview_pdf_base64,
+                use_hf=use_hf,
+                use_gemini=use_gemini,
             ),
             default=str,
         )
