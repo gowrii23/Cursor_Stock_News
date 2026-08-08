@@ -14,8 +14,11 @@
     <string name="settings_exclude_hint">EXCLUDE — red-flag keywords (fraud, SEBI action, insolvency…)</string>
     <string name="settings_candidate_hint">CANDIDATE — overreaction-friendly news (downgrade, miss, guidance cut…)</string>
     <string name="settings_blueprint_hint">BSE Blueprint theme tags per ticker (JSON)</string>
+    <string name="settings_api_keys_title">API keys (encrypted on device)</string>
     <string name="settings_hf_token_hint">Hugging Face API token</string>
-    <string name="settings_hf_token_help">Required for Ask AI. Create a fine-grained token at huggingface.co/settings/tokens with “Make calls to Inference Providers” enabled. Stored only on this device.</string>
+    <string name="settings_hf_token_help">Required for Ask AI. Create a fine-grained token at huggingface.co/settings/tokens with “Make calls to Inference Providers” enabled. Never stored in the app database.</string>
+    <string name="settings_gemini_key_hint">Google Gemini API key (optional)</string>
+    <string name="settings_gemini_key_help">For future concall qualitative analysis. Get a key at aistudio.google.com/apikey. Optional — Ask AI works without it.</string>
     <string name="ask_ai">Ask AI</string>
     <string name="ask_ai_title">AI verdict</string>
     <string name="ask_ai_loading">Asking AI…</string>

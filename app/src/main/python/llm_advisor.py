@@ -215,13 +215,19 @@ def build_stock_payload(db: Database, symbol: str) -> Dict[str, Any]:
     return payload
 
 
-def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[str, Any]:
+def get_verdict(
+    db: Database,
+    symbol: str,
+    hf_token: str = "",
+    gemini_key: str = "",
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
     """Cached daily HF verdict for a symbol. Manual trigger only."""
     sym = symbol.strip().upper()
     today = datetime.utcnow().date().isoformat()
 
-    token = db.get_setting("hf_token", None)
-    if not token or not str(token).strip():
+    token = (hf_token or "").strip()
+    if not token:
         return {
             "status": "no_token",
             "verdict": "ERROR",
@@ -252,9 +258,12 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
             "symbol": sym,
         }
 
+    # gemini_key reserved for future qualitative concall extraction (optional step).
+    _ = gemini_key
+
     user_content = USER_PROMPT_TEMPLATE.format(stock_json=json.dumps(payload, default=str))
     headers = {
-        "Authorization": f"Bearer {str(token).strip()}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
     body = {
@@ -317,12 +326,23 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
 
 def ask_ai_verdict_json(
     symbol: str,
+    hf_token: str = "",
+    gemini_key: str = "",
     db_path: Optional[str] = None,
     force_refresh: bool = False,
 ) -> str:
     db = Database(db_path)
     try:
-        return json.dumps(get_verdict(db, symbol, force_refresh=force_refresh), default=str)
+        return json.dumps(
+            get_verdict(
+                db,
+                symbol,
+                hf_token=hf_token,
+                gemini_key=gemini_key,
+                force_refresh=force_refresh,
+            ),
+            default=str,
+        )
     except Exception as e:
         logger.exception("ask_ai failed")
         return json.dumps(
@@ -336,15 +356,5 @@ def ask_ai_verdict_json(
                 "symbol": (symbol or "").upper(),
             }
         )
-    finally:
-        db.close()
-
-
-def hf_token_status_json(db_path: Optional[str] = None) -> str:
-    db = Database(db_path)
-    try:
-        token = db.get_setting("hf_token", None)
-        has = bool(token and str(token).strip())
-        return json.dumps({"has_token": has, "model": HF_MODEL})
     finally:
         db.close()

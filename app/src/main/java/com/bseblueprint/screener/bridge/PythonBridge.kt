@@ -1,6 +1,7 @@
 package com.bseblueprint.screener.bridge
 
 import android.content.Context
+import com.bseblueprint.screener.util.SecureTokenStore
 import com.chaquo.python.Python
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -10,10 +11,14 @@ import java.io.File
 object PythonBridge {
     private val gson = Gson()
     const val SCREENER_DEFAULT_URL = "https://www.screener.in/screens/3835709/cursor/"
+    const val HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
     @Volatile private var dbPath: String = ""
+    @Volatile private var appContext: Context? = null
 
     fun init(context: Context) {
-        val filesDir = context.filesDir
+        val appCtx = context.applicationContext
+        appContext = appCtx
+        val filesDir = appCtx.filesDir
         dbPath = File(filesDir, "bse_blueprint_screener.db").absolutePath
         // Mirror bundled assets into filesDir so Python can read overrides/defaults
         listOf(
@@ -24,12 +29,34 @@ object PythonBridge {
         ).forEach { name ->
             val dest = File(filesDir, name)
             if (!dest.exists()) {
-                context.assets.open(name).use { input ->
+                appCtx.assets.open(name).use { input ->
                     dest.outputStream().use { output -> input.copyTo(output) }
                 }
             }
         }
+        migrateLegacyHfToken(appCtx)
     }
+
+    private fun migrateLegacyHfToken(context: Context) {
+        if (SecureTokenStore.hasHfToken(context)) return
+        try {
+            val raw = module().callAttr("pop_legacy_hf_token_json", dbPath).toString()
+            val token = JsonParser.parseString(raw).asJsonObject
+                .get("token")?.asString.orEmpty().trim()
+            if (token.isNotEmpty()) {
+                SecureTokenStore.save(
+                    context,
+                    hf = token,
+                    gemini = SecureTokenStore.getGeminiKey(context)
+                )
+            }
+        } catch (_: Throwable) {
+            // Non-fatal — user can re-enter token in Settings
+        }
+    }
+
+    private fun requireContext(): Context =
+        appContext ?: error("PythonBridge.init() must be called before use")
 
     private fun module() = Python.getInstance().getModule("pipeline")
     private fun screenerModule() = Python.getInstance().getModule("screener_pipeline")
@@ -193,16 +220,26 @@ object PythonBridge {
     }
 
     fun askAiVerdict(symbol: String, forceRefresh: Boolean = false): JsonObject {
+        val ctx = requireContext()
         val raw = Python.getInstance().getModule("llm_advisor")
-            .callAttr("ask_ai_verdict_json", symbol, dbPath, forceRefresh)
+            .callAttr(
+                "ask_ai_verdict_json",
+                symbol,
+                SecureTokenStore.getHfToken(ctx),
+                SecureTokenStore.getGeminiKey(ctx),
+                dbPath,
+                forceRefresh
+            )
             .toString()
         return JsonParser.parseString(raw).asJsonObject
     }
 
     fun hfTokenStatus(): JsonObject {
-        val raw = Python.getInstance().getModule("llm_advisor")
-            .callAttr("hf_token_status_json", dbPath)
-            .toString()
-        return JsonParser.parseString(raw).asJsonObject
+        val ctx = appContext
+        return JsonObject().apply {
+            addProperty("has_token", ctx != null && SecureTokenStore.hasHfToken(ctx))
+            addProperty("has_gemini_key", ctx != null && SecureTokenStore.hasGeminiKey(ctx))
+            addProperty("model", HF_MODEL)
+        }
     }
 }
