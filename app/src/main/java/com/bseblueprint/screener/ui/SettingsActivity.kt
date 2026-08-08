@@ -1,6 +1,7 @@
 package com.bseblueprint.screener.ui
 
 import android.os.Bundle
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -41,6 +42,9 @@ class SettingsActivity : AppCompatActivity() {
         val swCharge = findViewById<MaterialSwitch>(R.id.swRequireCharging)
         val btnSave = findViewById<MaterialButton>(R.id.btnSave)
         val btnRun = findViewById<MaterialButton>(R.id.btnRunNow)
+        val btnTestGemini = findViewById<MaterialButton>(R.id.btnTestGemini)
+        val btnClearAllAi = findViewById<MaterialButton>(R.id.btnClearAllAiCaches)
+        val txtGeminiStatus = findViewById<TextView>(R.id.txtGeminiStatus)
 
         lifecycleScope.launch {
             try {
@@ -64,6 +68,7 @@ class SettingsActivity : AppCompatActivity() {
                 )
                 edtHfToken.setText(SecureTokenStore.getHfToken(this@SettingsActivity))
                 edtGeminiKey.setText(SecureTokenStore.getGeminiKey(this@SettingsActivity))
+                updateGeminiStatus(txtGeminiStatus, edtGeminiKey.text?.toString().orEmpty())
                 swWifi.isChecked = jsonBool(settings, "require_wifi", true)
                 swCharge.isChecked = jsonBool(settings, "require_charging", false)
             } catch (t: Throwable) {
@@ -102,6 +107,7 @@ class SettingsActivity : AppCompatActivity() {
                         hf = edtHfToken.text?.toString()?.trim().orEmpty(),
                         gemini = edtGeminiKey.text?.toString()?.trim().orEmpty()
                     )
+                    updateGeminiStatus(txtGeminiStatus, edtGeminiKey.text?.toString().orEmpty())
                     getSharedPreferences("screener_prefs", MODE_PRIVATE).edit()
                         .putBoolean("require_wifi", swWifi.isChecked)
                         .putBoolean("require_charging", swCharge.isChecked)
@@ -117,6 +123,39 @@ class SettingsActivity : AppCompatActivity() {
         btnRun.setOnClickListener {
             DailyScreenScheduler.runNow(this)
             Toast.makeText(this, "Daily screen queued", Toast.LENGTH_SHORT).show()
+        }
+
+        btnTestGemini.setOnClickListener {
+            lifecycleScope.launch {
+                SecureTokenStore.save(
+                    this@SettingsActivity,
+                    hf = edtHfToken.text?.toString()?.trim().orEmpty(),
+                    gemini = edtGeminiKey.text?.toString()?.trim().orEmpty()
+                )
+                val result = withContext(Dispatchers.IO) { PythonBridge.testGeminiKey() }
+                val ok = JsonSafe.bool(result, "ok") == true
+                val msg = JsonSafe.string(result, "message").orEmpty()
+                Toast.makeText(
+                    this@SettingsActivity,
+                    if (ok) getString(R.string.settings_gemini_key_set) else msg,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        btnClearAllAi.setOnClickListener {
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) { PythonBridge.clearAllAiCaches() }
+                Toast.makeText(this@SettingsActivity, "All AI caches cleared", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updateGeminiStatus(txt: TextView, key: String) {
+        txt.text = if (key.isNotBlank()) {
+            getString(R.string.settings_gemini_key_set)
+        } else {
+            getString(R.string.settings_gemini_key_missing)
         }
     }
 

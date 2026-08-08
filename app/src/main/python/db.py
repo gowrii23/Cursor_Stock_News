@@ -79,6 +79,14 @@ class Database:
                 cur.execute("ALTER TABLE pattas_stock ADD COLUMN pillar_count INTEGER")
             if "missing_fields" not in pattas_stock_cols:
                 cur.execute("ALTER TABLE pattas_stock ADD COLUMN missing_fields TEXT")
+        concall_cols = {row[1] for row in cur.execute("PRAGMA table_info(concall_cache)")}
+        if concall_cols:
+            if "transcript_method" not in concall_cols:
+                cur.execute("ALTER TABLE concall_cache ADD COLUMN transcript_method TEXT")
+            if "transcript_chars" not in concall_cols:
+                cur.execute("ALTER TABLE concall_cache ADD COLUMN transcript_chars INTEGER")
+            if "qual_status" not in concall_cols:
+                cur.execute("ALTER TABLE concall_cache ADD COLUMN qual_status TEXT")
         self.conn.commit()
 
     def _init_schema(self) -> None:
@@ -1209,12 +1217,24 @@ class Database:
         if not row:
             return None
         d = dict(row)
-        return {
+        out = {
             "verdict": d.get("verdict"),
             "confidence": d.get("confidence") or 0,
             "reasoning": d.get("reasoning") or "",
             "key_risk": d.get("key_risk") or "",
         }
+        raw = d.get("raw")
+        if raw:
+            try:
+                full = json.loads(raw)
+                if isinstance(full, dict):
+                    if full.get("sources_used"):
+                        out["sources_used"] = full["sources_used"]
+                    if full.get("qual_context"):
+                        out["qual_context"] = full["qual_context"]
+            except Exception:
+                pass
+        return out
 
     def save_concall_cache(self, symbol: str, record: Dict[str, Any]) -> None:
         cur = self.conn.cursor()
@@ -1223,8 +1243,8 @@ class Database:
             INSERT INTO concall_cache(
               symbol, period, transcript_url, transcript_excerpt,
               announcements_json, qual_summary_json, concall_list_json,
-              status, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              status, fetched_at, transcript_method, transcript_chars, qual_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(symbol) DO UPDATE SET
               period=excluded.period,
               transcript_url=excluded.transcript_url,
@@ -1233,7 +1253,10 @@ class Database:
               qual_summary_json=excluded.qual_summary_json,
               concall_list_json=excluded.concall_list_json,
               status=excluded.status,
-              fetched_at=excluded.fetched_at
+              fetched_at=excluded.fetched_at,
+              transcript_method=excluded.transcript_method,
+              transcript_chars=excluded.transcript_chars,
+              qual_status=excluded.qual_status
             """,
             (
                 symbol.upper(),
@@ -1247,6 +1270,9 @@ class Database:
                 json.dumps(record.get("concall_list") or [], default=str),
                 record.get("status") or "ok",
                 record.get("fetched_at"),
+                record.get("transcript_method"),
+                record.get("transcript_chars"),
+                record.get("qual_status"),
             ),
         )
         self.conn.commit()
@@ -1257,7 +1283,7 @@ class Database:
             """
             SELECT period, transcript_url, transcript_excerpt,
                    announcements_json, qual_summary_json, concall_list_json,
-                   status, fetched_at
+                   status, fetched_at, transcript_method, transcript_chars, qual_status
             FROM concall_cache WHERE symbol = ?
             """,
             (symbol.upper(),),
@@ -1280,12 +1306,29 @@ class Database:
             "period": d.get("period"),
             "transcript_url": d.get("transcript_url"),
             "transcript_excerpt": d.get("transcript_excerpt") or "",
-            "transcript_chars": len(d.get("transcript_excerpt") or ""),
+            "transcript_chars": d.get("transcript_chars")
+            if d.get("transcript_chars") is not None
+            else len(d.get("transcript_excerpt") or ""),
+            "transcript_method": d.get("transcript_method"),
+            "qual_status": d.get("qual_status"),
             "announcements": _loads(d.get("announcements_json"), []),
             "qual_summary": _loads(d.get("qual_summary_json"), None),
             "concall_list": _loads(d.get("concall_list_json"), []),
             "fetched_at": d.get("fetched_at"),
         }
+
+    def clear_ai_cache(self, symbol: str) -> None:
+        sym = symbol.strip().upper()
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM llm_verdicts WHERE symbol = ?", (sym,))
+        cur.execute("DELETE FROM concall_cache WHERE symbol = ?", (sym,))
+        self.conn.commit()
+
+    def clear_all_ai_caches(self) -> None:
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM llm_verdicts")
+        cur.execute("DELETE FROM concall_cache")
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()

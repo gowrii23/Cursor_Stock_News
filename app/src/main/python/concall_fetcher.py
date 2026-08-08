@@ -270,12 +270,79 @@ def _cache_stale(fetched_at: Optional[str]) -> bool:
     return datetime.utcnow() - dt > timedelta(days=CACHE_DAYS)
 
 
+def _extract_pdf_text_from_base64(data_b64: str, max_chars: int = MAX_TRANSCRIPT_CHARS) -> str:
+    if not data_b64:
+        return ""
+    try:
+        import base64
+
+        raw = base64.b64decode(data_b64)
+        return _extract_pdf_text(raw, max_chars=max_chars)
+    except Exception:
+        logger.debug("base64 PDF extraction failed", exc_info=True)
+        return ""
+
+
+def fetch_transcript_headless(
+    transcript_url: Optional[str],
+) -> Tuple[str, str]:
+    """Returns (text, method) where method is headless | webview_needed | unavailable."""
+    if not transcript_url:
+        return "", "unavailable"
+    pdf_bytes = _download_pdf_bytes(transcript_url)
+    if not pdf_bytes:
+        return "", "webview_needed"
+    text = _extract_pdf_text(pdf_bytes)
+    if len(text) > 500:
+        return text, "headless"
+    return "", "webview_needed"
+
+
+def build_sources_used(
+    record: Dict[str, Any],
+    *,
+    cached: bool = False,
+    qual_status: Optional[str] = None,
+) -> Dict[str, Any]:
+    return {
+        "concall_date": record.get("period"),
+        "transcript_chars": int(record.get("transcript_chars") or 0),
+        "transcript_method": record.get("transcript_method") or "unavailable",
+        "qual_status": qual_status or record.get("qual_status") or "skipped_no_transcript",
+        "cached": cached,
+    }
+
+
+def test_gemini_key(gemini_key: str) -> Dict[str, Any]:
+    key = (gemini_key or "").strip()
+    if not key:
+        return {"ok": False, "message": "No Gemini key saved"}
+    try:
+        resp = requests.post(
+            f"{GEMINI_API}?key={key}",
+            json={
+                "contents": [{"parts": [{"text": "Reply with exactly: OK"}]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 8},
+            },
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            return {"ok": False, "message": "Gemini rate limit — try again shortly"}
+        if resp.status_code != 200:
+            return {"ok": False, "message": f"Gemini error {resp.status_code}"}
+        return {"ok": True, "message": "Gemini key OK"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)[:120]}
+
+
 def get_or_fetch_concall(
     db: Database,
     symbol: str,
     gemini_key: str = "",
     force_refresh: bool = False,
     progress_cb: Any = None,
+    webview_transcript_text: str = "",
+    webview_pdf_base64: str = "",
 ) -> Dict[str, Any]:
     """Return latest concall context for a symbol (cached up to CACHE_DAYS)."""
     sym = symbol.strip().upper()
@@ -302,23 +369,59 @@ def get_or_fetch_concall(
     period = (latest or {}).get("period")
     transcript_url = (latest or {}).get("transcript_url")
     transcript_text = ""
+    transcript_method = "unavailable"
+    qual_status = "skipped_no_transcript"
 
-    if transcript_url:
+    if webview_pdf_base64:
+        report(progress_cb, 22, "Extracting WebView transcript…")
+        transcript_text = _extract_pdf_text_from_base64(webview_pdf_base64)
+        if len(transcript_text) > 500:
+            transcript_method = "webview"
+    elif webview_transcript_text and len(webview_transcript_text.strip()) > 500:
+        transcript_text = webview_transcript_text.strip()[:MAX_TRANSCRIPT_CHARS]
+        transcript_method = "webview"
+    elif transcript_url:
         report(progress_cb, 18, f"Downloading transcript ({period or 'latest'})…")
-        pdf_bytes = _download_pdf_bytes(transcript_url)
-        if pdf_bytes:
-            transcript_text = _extract_pdf_text(pdf_bytes)
-        elif announcements:
+        transcript_text, transcript_method = fetch_transcript_headless(transcript_url)
+        if transcript_method == "webview_needed":
+            report(progress_cb, 20, "Headless blocked — WebView fallback needed")
+            return {
+                "symbol": sym,
+                "status": "webview_needed",
+                "period": period,
+                "transcript_url": transcript_url,
+                "transcript_method": "webview_needed",
+                "transcript_chars": 0,
+                "qual_status": "skipped_no_transcript",
+                "announcements": announcements,
+                "concall_list": concalls[:6],
+                "fetched_at": datetime.utcnow().isoformat(),
+            }
+        if not transcript_text and announcements:
             report(progress_cb, 20, "Transcript PDF unavailable — using announcements")
 
     qual_summary: Optional[Dict[str, Any]] = None
-    if (gemini_key or "").strip() and (transcript_text or announcements):
-        report(progress_cb, 30, "Summarizing qualitative context…")
-        qual_summary = _summarize_with_gemini(
-            transcript_text, announcements, gemini_key
-        )
-        if qual_summary is None and transcript_text:
-            report(progress_cb, 32, "Gemini skipped — using transcript excerpt only")
+    has_gemini = bool((gemini_key or "").strip())
+    has_qual_input = bool(transcript_text or announcements)
+
+    if has_gemini and has_qual_input:
+        report(progress_cb, 30, "Summarizing with Gemini…")
+        try:
+            qual_summary = _summarize_with_gemini(
+                transcript_text, announcements, gemini_key
+            )
+            if qual_summary:
+                qual_status = "used"
+            else:
+                qual_status = "skipped_gemini_error"
+        except _RateLimitError:
+            qual_status = "skipped_rate_limit"
+        except Exception:
+            qual_status = "skipped_gemini_error"
+    elif has_qual_input and not has_gemini:
+        qual_status = "skipped_no_key"
+    elif not has_qual_input:
+        qual_status = "skipped_no_transcript"
 
     record: Dict[str, Any] = {
         "symbol": sym,
@@ -326,6 +429,8 @@ def get_or_fetch_concall(
         "period": period,
         "transcript_url": transcript_url,
         "transcript_chars": len(transcript_text),
+        "transcript_method": transcript_method,
+        "qual_status": qual_status,
         "transcript_excerpt": transcript_text[:2500] if transcript_text else "",
         "announcements": announcements,
         "concall_list": concalls[:6],

@@ -14,10 +14,17 @@ from db import Database
 from progress_report import report
 
 try:
-    from concall_fetcher import concall_payload_for_llm, get_or_fetch_concall
+    from concall_fetcher import (
+        build_sources_used,
+        concall_payload_for_llm,
+        get_or_fetch_concall,
+        test_gemini_key,
+    )
 except Exception:  # pragma: no cover - import guard for partial deploys
     get_or_fetch_concall = None  # type: ignore
     concall_payload_for_llm = None  # type: ignore
+    build_sources_used = None  # type: ignore
+    test_gemini_key = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +238,8 @@ def get_verdict(
     gemini_key: str = "",
     force_refresh: bool = False,
     progress_cb: Any = None,
+    webview_transcript_text: str = "",
+    webview_pdf_base64: str = "",
 ) -> Dict[str, Any]:
     """Cached daily HF verdict for a symbol. Manual trigger only."""
     sym = symbol.strip().upper()
@@ -254,6 +263,13 @@ def get_verdict(
             cached["status"] = "ok"
             cached["cached"] = True
             cached["symbol"] = sym
+            su = cached.get("sources_used") or {}
+            if isinstance(su, dict):
+                su = dict(su)
+                su["cached"] = True
+                cached["sources_used"] = su
+            elif build_sources_used:
+                cached["sources_used"] = build_sources_used({}, cached=True)
             return cached
 
     payload = build_stock_payload(db, sym)
@@ -268,22 +284,46 @@ def get_verdict(
             "symbol": sym,
         }
 
-    concall_block: Dict[str, Any] = {}
+    concall_record: Dict[str, Any] = {}
     if get_or_fetch_concall and concall_payload_for_llm:
         try:
             concall_record = get_or_fetch_concall(
                 db,
                 sym,
                 gemini_key=gemini_key,
-                force_refresh=force_refresh,
+                force_refresh=force_refresh or bool(webview_pdf_base64 or webview_transcript_text),
                 progress_cb=progress_cb,
+                webview_transcript_text=webview_transcript_text,
+                webview_pdf_base64=webview_pdf_base64,
             )
+            if concall_record.get("status") == "webview_needed":
+                return {
+                    "status": "needs_webview",
+                    "verdict": "ERROR",
+                    "confidence": 0,
+                    "reasoning": "Opening transcript in browser view…",
+                    "key_risk": "",
+                    "cached": False,
+                    "symbol": sym,
+                    "transcript_url": concall_record.get("transcript_url"),
+                    "sources_used": build_sources_used(concall_record, cached=False)
+                    if build_sources_used
+                    else {},
+                }
             concall_block = concall_payload_for_llm(concall_record)
             if concall_block:
                 payload["concall"] = concall_block
         except Exception:
             logger.debug("concall fetch skipped for %s", sym, exc_info=True)
             report(progress_cb, 35, "Concall fetch skipped — quant-only verdict")
+            concall_record = {}
+
+    sources_used = (
+        build_sources_used(concall_record, cached=False)
+        if build_sources_used
+        else {}
+    )
+    qual_context = concall_record.get("qual_summary")
 
     report(progress_cb, 45, "Asking Hugging Face…")
     user_content = USER_PROMPT_TEMPLATE.format(stock_json=json.dumps(payload, default=str))
@@ -312,6 +352,9 @@ def get_verdict(
                 result["status"] = "ok" if result.get("verdict") != "ERROR" else "error"
                 result["symbol"] = sym
                 result["model"] = HF_MODEL
+                result["sources_used"] = sources_used
+                if qual_context:
+                    result["qual_context"] = qual_context
                 if result.get("verdict") != "ERROR":
                     db.save_llm_verdict(sym, today, result)
                 return result
@@ -356,6 +399,8 @@ def ask_ai_verdict_json(
     db_path: Optional[str] = None,
     force_refresh: bool = False,
     progress_cb: Any = None,
+    webview_transcript_text: str = "",
+    webview_pdf_base64: str = "",
 ) -> str:
     db = Database(db_path)
     try:
@@ -367,6 +412,8 @@ def ask_ai_verdict_json(
                 gemini_key=gemini_key,
                 force_refresh=force_refresh,
                 progress_cb=progress_cb,
+                webview_transcript_text=webview_transcript_text,
+                webview_pdf_base64=webview_pdf_base64,
             ),
             default=str,
         )
@@ -385,3 +432,27 @@ def ask_ai_verdict_json(
         )
     finally:
         db.close()
+
+
+def clear_ai_cache_json(symbol: str, db_path: Optional[str] = None) -> str:
+    db = Database(db_path)
+    try:
+        db.clear_ai_cache(symbol)
+        return json.dumps({"status": "ok", "symbol": symbol.upper()})
+    finally:
+        db.close()
+
+
+def clear_all_ai_caches_json(db_path: Optional[str] = None) -> str:
+    db = Database(db_path)
+    try:
+        db.clear_all_ai_caches()
+        return json.dumps({"status": "ok"})
+    finally:
+        db.close()
+
+
+def test_gemini_key_json(gemini_key: str) -> str:
+    if not test_gemini_key:
+        return json.dumps({"ok": False, "message": "Gemini not available"})
+    return json.dumps(test_gemini_key(gemini_key))
