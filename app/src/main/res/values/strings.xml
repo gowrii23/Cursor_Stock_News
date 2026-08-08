@@ -20,6 +20,14 @@
     <string name="settings_gemini_key_hint">Google Gemini API key (optional)</string>
     <string name="settings_gemini_key_help">Optional: summarizes concall transcripts for Ask AI. Get a key at aistudio.google.com/apikey. Without it, announcements/transcript excerpts are still used when available.</string>
     <string name="ask_ai">Ask AI</string>
+    <string name="ask_ai_clear_cache">Clear cache &amp; re-ask</string>
+    <string name="ask_ai_clear_all_caches">Clear all AI caches</string>
+    <string name="ask_ai_qual_title">Qualitative context (Gemini)</string>
+    <string name="settings_gemini_key_set">Gemini key: set ✓</string>
+    <string name="settings_gemini_key_missing">Gemini key: not set</string>
+    <string name="settings_test_gemini">Test Gemini key</string>
+    <string name="concall_scan_title">Fetching transcript</string>
+    <string name="concall_scan_loading">Loading transcript in browser view…</string>
     <string name="ask_ai_title">AI verdict</string>
     <string name="ask_ai_loading">Asking AI…</string>
     <string name="ask_ai_no_token">Add a Hugging Face token in Settings to enable Ask AI.</string>

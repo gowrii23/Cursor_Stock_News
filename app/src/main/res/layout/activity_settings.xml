@@ -163,6 +163,23 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
 
+            <TextView
+                android:id="@+id/txtGeminiStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_gemini_key_missing"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTestGemini"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/settings_test_gemini" />
+
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/swRequireWifi"
                 android:layout_width="match_parent"
@@ -185,6 +202,14 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Save settings" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnClearAllAiCaches"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/ask_ai_clear_all_caches" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRunNow"

@@ -222,7 +222,9 @@ object PythonBridge {
     fun askAiVerdict(
         symbol: String,
         forceRefresh: Boolean = false,
-        reporter: RunProgressReporter? = null
+        reporter: RunProgressReporter? = null,
+        webviewTranscriptText: String = "",
+        webviewPdfBase64: String = ""
     ): JsonObject {
         val ctx = requireContext()
         val raw = Python.getInstance().getModule("llm_advisor")
@@ -233,8 +235,32 @@ object PythonBridge {
                 SecureTokenStore.getGeminiKey(ctx),
                 dbPath,
                 forceRefresh,
-                reporter
+                reporter,
+                webviewTranscriptText,
+                webviewPdfBase64
             )
+            .toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun clearAiCache(symbol: String): JsonObject {
+        val raw = Python.getInstance().getModule("llm_advisor")
+            .callAttr("clear_ai_cache_json", symbol, dbPath)
+            .toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun clearAllAiCaches(): JsonObject {
+        val raw = Python.getInstance().getModule("llm_advisor")
+            .callAttr("clear_all_ai_caches_json", dbPath)
+            .toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun testGeminiKey(): JsonObject {
+        val ctx = requireContext()
+        val raw = Python.getInstance().getModule("llm_advisor")
+            .callAttr("test_gemini_key_json", SecureTokenStore.getGeminiKey(ctx))
             .toString()
         return JsonParser.parseString(raw).asJsonObject
     }

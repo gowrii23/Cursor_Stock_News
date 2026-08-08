@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
@@ -54,17 +55,36 @@ class StockDetailActivity : AppCompatActivity() {
         val chart = findViewById<LineChart>(R.id.priceChart)
         val btnShare = findViewById<MaterialButton>(R.id.btnShare)
 
+        val concallLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val data = result.data
+                AskAiHelper.onWebViewResult(
+                    this,
+                    data?.getStringExtra(ConcallScanActivity.EXTRA_TRANSCRIPT_TEXT),
+                    data?.getStringExtra(ConcallScanActivity.EXTRA_PDF_BASE64)
+                )
+            } else {
+                AskAiHelper.onWebViewCancelled()
+            }
+        }
+
         AskAiHelper.bind(
             activity = this,
             symbolProvider = { ticker },
             btnAsk = findViewById(R.id.btnAskAi),
+            btnClear = findViewById(R.id.btnClearAskAi),
             progress = findViewById(R.id.askAiProgress),
             txtStatus = findViewById(R.id.txtAskAiStatus),
             card = findViewById(R.id.askAiCard),
             txtVerdict = findViewById(R.id.txtAiVerdict),
             txtReasoning = findViewById(R.id.txtAiReasoning),
             txtRisk = findViewById(R.id.txtAiRisk),
-            txtDisclaimer = findViewById(R.id.txtAiDisclaimer)
+            txtSources = findViewById(R.id.txtAiSources),
+            txtQual = findViewById(R.id.txtAiQual),
+            txtDisclaimer = findViewById(R.id.txtAiDisclaimer),
+            webViewLauncher = concallLauncher
         )
 
         btnShare.setOnClickListener {
