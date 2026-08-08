@@ -55,7 +55,7 @@ object AskAiHelper {
                             txtReasoning.text = ""
                             txtRisk.text = ""
                         }
-                        "unavailable" -> {
+                        "unavailable", "error" -> {
                             txtVerdict.text = activity.getString(R.string.ask_ai_unavailable)
                             txtReasoning.text = reasoning
                             txtRisk.text = risk
