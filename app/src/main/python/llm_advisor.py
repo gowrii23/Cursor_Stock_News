@@ -16,7 +16,33 @@ logger = logging.getLogger(__name__)
 
 # Prefer a publicly reachable Instruct model on HF Inference.
 HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
-HF_API = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+# api-inference.huggingface.co was retired; router is the supported endpoint.
+HF_API = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+
+
+def _friendly_api_error(exc_or_msg: Any, status_code: Optional[int] = None) -> str:
+    """Map HTTP / network failures to short user-facing text (no tracebacks)."""
+    msg = str(exc_or_msg)
+    lower = msg.lower()
+    if status_code == 401:
+        return "Invalid Hugging Face token — check Settings."
+    if status_code == 403:
+        return "Token cannot access this model — accept its license on huggingface.co."
+    if status_code == 429:
+        return "Hugging Face rate limit — wait a few minutes and retry."
+    if status_code == 410:
+        return "Hugging Face API endpoint retired — update the app."
+    if status_code == 503:
+        return "Model is loading on Hugging Face — retry in a minute."
+    if "failed to resolve" in lower or "name resolution" in lower or "could not resolve host" in lower:
+        return "Cannot reach Hugging Face (network/DNS). Check internet connection."
+    if "timed out" in lower or "timeout" in lower:
+        return "Request timed out — check connection and retry."
+    if "max retries exceeded" in lower or "connectionerror" in lower:
+        return "Could not connect to Hugging Face — check internet and retry."
+    if len(msg) > 160:
+        return "Hugging Face request failed — check token and connection."
+    return msg
 
 PROMPT_TEMPLATE = """You are a value-investing analyst. Use ONLY the JSON stock data below.
 Do not invent numbers, prices, or facts that are not in the data.
@@ -199,7 +225,7 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
         },
     }
 
-    last_err = "Timed out after 3 retries"
+    last_err = "Request timed out — check connection and retry."
     for attempt in range(3):
         try:
             resp = requests.post(HF_API, headers=headers, json=body, timeout=35)
@@ -212,7 +238,7 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
                     db.save_llm_verdict(sym, today, result)
                 return result
             if resp.status_code in (503, 429):
-                last_err = f"API {resp.status_code} (model loading or rate limit)"
+                last_err = _friendly_api_error("", resp.status_code)
                 time.sleep(5 * (attempt + 1))
                 continue
             # Auth / hard errors — don't retry forever
@@ -225,13 +251,13 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
                 "status": "error",
                 "verdict": "ERROR",
                 "confidence": 0,
-                "reasoning": f"API error {resp.status_code}: {msg}",
+                "reasoning": _friendly_api_error(msg, resp.status_code),
                 "key_risk": "Check HF token / model access",
                 "cached": False,
                 "symbol": sym,
             }
         except requests.RequestException as e:
-            last_err = str(e)
+            last_err = _friendly_api_error(e)
             time.sleep(3)
             continue
 
@@ -239,8 +265,8 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
         "status": "unavailable",
         "verdict": "ERROR",
         "confidence": 0,
-        "reasoning": f"AI unavailable — {last_err}. Use your raw L1/L2/L3 score breakdown.",
-        "key_risk": "External API unavailable",
+        "reasoning": last_err,
+        "key_risk": "Use your raw L1/L2/L3 score breakdown above",
         "cached": False,
         "symbol": sym,
     }
