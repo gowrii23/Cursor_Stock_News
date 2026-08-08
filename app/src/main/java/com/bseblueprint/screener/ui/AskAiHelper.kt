@@ -10,9 +10,11 @@ import androidx.lifecycle.lifecycleScope
 import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.bridge.RunProgressReporter
+import com.bseblueprint.screener.util.AskAiProviderPrefs
 import com.bseblueprint.screener.util.AskAiSourceFooter
 import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,6 +26,8 @@ object AskAiHelper {
     fun bind(
         activity: AppCompatActivity,
         symbolProvider: () -> String,
+        switchHf: MaterialSwitch,
+        switchGemini: MaterialSwitch,
         btnAsk: MaterialButton,
         btnClear: MaterialButton,
         progress: ProgressBar,
@@ -42,11 +46,23 @@ object AskAiHelper {
         progress.visibility = View.GONE
         txtStatus.visibility = View.GONE
 
+        switchHf.isChecked = AskAiProviderPrefs.isHfEnabled(activity)
+        switchGemini.isChecked = AskAiProviderPrefs.isGeminiEnabled(activity)
+        switchHf.setOnCheckedChangeListener { _, checked ->
+            AskAiProviderPrefs.setHfEnabled(activity, checked)
+            updateAskButtons(activity, switchHf, switchGemini, btnAsk, btnClear)
+        }
+        switchGemini.setOnCheckedChangeListener { _, checked ->
+            AskAiProviderPrefs.setGeminiEnabled(activity, checked)
+            updateAskButtons(activity, switchHf, switchGemini, btnAsk, btnClear)
+        }
+        updateAskButtons(activity, switchHf, switchGemini, btnAsk, btnClear)
+
         btnClear.setOnClickListener {
             val symbol = symbolProvider().trim()
             if (symbol.isEmpty()) return@setOnClickListener
             runAskAi(activity, symbol, forceRefresh = true, clearFirst = true,
-                symbolProvider, btnAsk, btnClear, progress, txtStatus, card,
+                symbolProvider, switchHf, switchGemini, btnAsk, btnClear, progress, txtStatus, card,
                 txtVerdict, txtReasoning, txtRisk, txtSources, txtQual, webViewLauncher)
         }
 
@@ -54,8 +70,25 @@ object AskAiHelper {
             val symbol = symbolProvider().trim()
             if (symbol.isEmpty()) return@setOnClickListener
             runAskAi(activity, symbol, forceRefresh = false, clearFirst = false,
-                symbolProvider, btnAsk, btnClear, progress, txtStatus, card,
+                symbolProvider, switchHf, switchGemini, btnAsk, btnClear, progress, txtStatus, card,
                 txtVerdict, txtReasoning, txtRisk, txtSources, txtQual, webViewLauncher)
+        }
+    }
+
+    private fun updateAskButtons(
+        activity: AppCompatActivity,
+        switchHf: MaterialSwitch,
+        switchGemini: MaterialSwitch,
+        btnAsk: MaterialButton,
+        btnClear: MaterialButton
+    ) {
+        val anyOn = switchHf.isChecked || switchGemini.isChecked
+        btnAsk.isEnabled = anyOn
+        btnClear.isEnabled = anyOn
+        btnAsk.alpha = if (anyOn) 1f else 0.5f
+        btnClear.alpha = if (anyOn) 1f else 0.5f
+        if (!anyOn) {
+            btnAsk.contentDescription = activity.getString(R.string.ask_ai_both_off_hint)
         }
     }
 
@@ -65,6 +98,8 @@ object AskAiHelper {
         forceRefresh: Boolean,
         clearFirst: Boolean,
         symbolProvider: () -> String,
+        switchHf: MaterialSwitch,
+        switchGemini: MaterialSwitch,
         btnAsk: MaterialButton,
         btnClear: MaterialButton,
         progress: ProgressBar,
@@ -77,6 +112,17 @@ object AskAiHelper {
         txtQual: TextView,
         webViewLauncher: ActivityResultLauncher<Intent>
     ) {
+        if (!switchHf.isChecked && !switchGemini.isChecked) {
+            card.visibility = View.VISIBLE
+            txtVerdict.text = activity.getString(R.string.ask_ai_both_off_hint)
+            txtReasoning.text = ""
+            txtRisk.text = ""
+            txtSources.text = ""
+            txtQual.visibility = View.GONE
+            return
+        }
+        val useHf = switchHf.isChecked
+        val useGemini = switchGemini.isChecked
         progress.visibility = View.VISIBLE
         txtStatus.visibility = View.VISIBLE
         txtStatus.text = activity.getString(R.string.ask_ai_loading)
@@ -91,7 +137,13 @@ object AskAiHelper {
                     txtStatus.text = message
                 }
                 var result = withContext(Dispatchers.IO) {
-                    PythonBridge.askAiVerdict(symbol, forceRefresh = forceRefresh || clearFirst, reporter = reporter)
+                    PythonBridge.askAiVerdict(
+                        symbol,
+                        forceRefresh = forceRefresh || clearFirst,
+                        reporter = reporter,
+                        useHf = useHf,
+                        useGemini = useGemini
+                    )
                 }
                 if (JsonSafe.string(result, "status") == "needs_webview") {
                     val url = JsonSafe.string(result, "transcript_url").orEmpty()
@@ -100,7 +152,7 @@ object AskAiHelper {
                         val intent = Intent(activity, ConcallScanActivity::class.java)
                             .putExtra(ConcallScanActivity.EXTRA_URL, url)
                         pendingWebViewAsk = PendingWebViewAsk(
-                            symbol, forceRefresh || clearFirst, reporter,
+                            symbol, forceRefresh || clearFirst, useHf, useGemini, reporter,
                             btnAsk, btnClear, progress, txtStatus, card,
                             txtVerdict, txtReasoning, txtRisk, txtSources, txtQual
                         )
@@ -154,7 +206,9 @@ object AskAiHelper {
                         forceRefresh = true,
                         reporter = pending.reporter,
                         webviewTranscriptText = transcriptText.orEmpty(),
-                        webviewPdfBase64 = pdfBase64.orEmpty()
+                        webviewPdfBase64 = pdfBase64.orEmpty(),
+                        useHf = pending.useHf,
+                        useGemini = pending.useGemini
                     )
                 }
                 showResult(
@@ -204,6 +258,20 @@ object AskAiHelper {
                 txtSources.text = ""
                 txtQual.visibility = View.GONE
             }
+            "hf_disabled" -> {
+                txtVerdict.text = activity.getString(R.string.ask_ai_hf_disabled)
+                txtReasoning.text = reasoning
+                txtRisk.text = ""
+                txtSources.text = footer
+                bindQual(txtQual, qualText)
+            }
+            "gemini_only" -> {
+                txtVerdict.text = activity.getString(R.string.ask_ai_gemini_only)
+                txtReasoning.text = reasoning
+                txtRisk.text = risk
+                txtSources.text = footer
+                bindQual(txtQual, qualText)
+            }
             "unavailable", "error", "needs_webview" -> {
                 txtVerdict.text = activity.getString(R.string.ask_ai_unavailable)
                 txtReasoning.text = reasoning
@@ -236,6 +304,8 @@ object AskAiHelper {
     private data class PendingWebViewAsk(
         val symbol: String,
         val forceRefresh: Boolean,
+        val useHf: Boolean,
+        val useGemini: Boolean,
         val reporter: RunProgressReporter,
         val btnAsk: MaterialButton,
         val btnClear: MaterialButton,

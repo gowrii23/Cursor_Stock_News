@@ -50,6 +50,8 @@ class ScreenerDetailActivity : AppCompatActivity() {
         AskAiHelper.bind(
             activity = this,
             symbolProvider = { symbol },
+            switchHf = findViewById(R.id.switchAskAiHf),
+            switchGemini = findViewById(R.id.switchAskAiGemini),
             btnAsk = findViewById(R.id.btnAskAi),
             btnClear = findViewById(R.id.btnClearAskAi),
             progress = findViewById(R.id.askAiProgress),

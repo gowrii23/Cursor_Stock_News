@@ -3,46 +3,80 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:baselineAligned="false"
-    android:orientation="horizontal">
+    android:orientation="vertical">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnAskAi"
-        android:layout_width="0dp"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:ellipsize="end"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:maxLines="1"
-        android:minHeight="40dp"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
-        android:text="@string/ask_ai"
-        android:textAllCaps="false"
-        android:textSize="12sp"
-        app:autoSizeMaxTextSize="12sp"
-        app:autoSizeMinTextSize="10sp"
-        app:autoSizeTextType="uniform" />
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnClearAskAi"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="0dp"
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchAskAiHf"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:checked="true"
+            android:text="@string/ask_ai_toggle_hf"
+            android:textSize="12sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchAskAiGemini"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:checked="true"
+            android:text="@string/ask_ai_toggle_gemini"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
-        android:layout_weight="1"
-        android:ellipsize="end"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:maxLines="1"
-        android:minHeight="40dp"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
-        android:text="@string/ask_ai_clear_cache"
-        android:textAllCaps="false"
-        android:textSize="12sp"
-        app:autoSizeMaxTextSize="12sp"
-        app:autoSizeMinTextSize="10sp"
-        app:autoSizeTextType="uniform" />
+        android:layout_marginTop="6dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAskAi"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minHeight="40dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:text="@string/ask_ai"
+            android:textAllCaps="false"
+            android:textSize="12sp"
+            app:autoSizeMaxTextSize="12sp"
+            app:autoSizeMinTextSize="10sp"
+            app:autoSizeTextType="uniform" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearAskAi"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minHeight="40dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:text="@string/ask_ai_clear_cache"
+            android:textAllCaps="false"
+            android:textSize="12sp"
+            app:autoSizeMaxTextSize="12sp"
+            app:autoSizeMinTextSize="10sp"
+            app:autoSizeTextType="uniform" />
+    </LinearLayout>
 </LinearLayout>

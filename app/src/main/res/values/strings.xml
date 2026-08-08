@@ -19,7 +19,12 @@
     <string name="settings_hf_token_help">Required for Ask AI. Create a fine-grained token at huggingface.co/settings/tokens with “Make calls to Inference Providers” enabled. Never stored in the app database.</string>
     <string name="settings_gemini_key_hint">Google Gemini API key (optional)</string>
     <string name="settings_gemini_key_help">Optional: summarizes concall transcripts for Ask AI. Get a key at aistudio.google.com/apikey. Without it, announcements/transcript excerpts are still used when available.</string>
+    <string name="ask_ai_toggle_hf">HF verdict</string>
+    <string name="ask_ai_toggle_gemini">Gemini qual</string>
     <string name="ask_ai">Ask AI</string>
+    <string name="ask_ai_both_off_hint">Turn on HF or Gemini to run Ask AI.</string>
+    <string name="ask_ai_hf_disabled">Hugging Face is off — enable the HF toggle for a verdict.</string>
+    <string name="ask_ai_gemini_only">Gemini qual only (HF off)</string>
     <string name="ask_ai_clear_cache">Re-ask</string>
     <string name="ask_ai_clear_all_caches">Clear all AI caches</string>
     <string name="ask_ai_qual_title">Qualitative context (Gemini)</string>
