@@ -14,6 +14,15 @@
     <string name="settings_exclude_hint">EXCLUDE — red-flag keywords (fraud, SEBI action, insolvency…)</string>
     <string name="settings_candidate_hint">CANDIDATE — overreaction-friendly news (downgrade, miss, guidance cut…)</string>
     <string name="settings_blueprint_hint">BSE Blueprint theme tags per ticker (JSON)</string>
+    <string name="settings_hf_token_hint">Hugging Face API token</string>
+    <string name="settings_hf_token_help">Required for Ask AI on stock detail. Get a token at huggingface.co/settings/tokens. Stored only on this device.</string>
+    <string name="ask_ai">Ask AI</string>
+    <string name="ask_ai_title">AI verdict</string>
+    <string name="ask_ai_loading">Asking AI…</string>
+    <string name="ask_ai_no_token">Add a Hugging Face token in Settings to enable Ask AI.</string>
+    <string name="ask_ai_disclaimer">AI synthesis of your own screener data — not financial advice, may hallucinate.</string>
+    <string name="ask_ai_cached">(cached today)</string>
+    <string name="ask_ai_unavailable">AI unavailable — use the raw score breakdown above.</string>
     <string name="news_pulse_section">Zerodha Pulse</string>
     <string name="demo_ticker_toast">[TEST] is a synthetic mock row — not a real stock</string>
     <string name="filter_actionable">Actionable</string>

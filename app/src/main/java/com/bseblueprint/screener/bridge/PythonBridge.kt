@@ -191,4 +191,18 @@ object PythonBridge {
         val raw = pattasModule().callAttr("get_pattas_candidates_json", dbPath).toString()
         return JsonParser.parseString(raw).asJsonObject
     }
+
+    fun askAiVerdict(symbol: String, forceRefresh: Boolean = false): JsonObject {
+        val raw = Python.getInstance().getModule("llm_advisor")
+            .callAttr("ask_ai_verdict_json", symbol, dbPath, forceRefresh)
+            .toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
+
+    fun hfTokenStatus(): JsonObject {
+        val raw = Python.getInstance().getModule("llm_advisor")
+            .callAttr("hf_token_status_json", dbPath)
+            .toString()
+        return JsonParser.parseString(raw).asJsonObject
+    }
 }

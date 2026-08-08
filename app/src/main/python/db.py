@@ -265,6 +265,17 @@ class Database:
               first_seen_date TEXT,
               last_seen_date TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS llm_verdicts (
+              symbol TEXT NOT NULL,
+              date TEXT NOT NULL,
+              verdict TEXT,
+              confidence INTEGER,
+              reasoning TEXT,
+              key_risk TEXT,
+              raw TEXT,
+              PRIMARY KEY (symbol, date)
+            );
             """
         )
         self.conn.commit()
@@ -1146,6 +1157,52 @@ class Database:
             return json.loads(row["value"])
         except Exception:
             return row["value"]
+
+    def save_llm_verdict(self, symbol: str, date: str, result: Dict[str, Any]) -> None:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO llm_verdicts(
+              symbol, date, verdict, confidence, reasoning, key_risk, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, date) DO UPDATE SET
+              verdict=excluded.verdict,
+              confidence=excluded.confidence,
+              reasoning=excluded.reasoning,
+              key_risk=excluded.key_risk,
+              raw=excluded.raw
+            """,
+            (
+                symbol.upper(),
+                date,
+                result.get("verdict"),
+                result.get("confidence"),
+                result.get("reasoning"),
+                result.get("key_risk"),
+                json.dumps(result, default=str),
+            ),
+        )
+        self.conn.commit()
+
+    def get_llm_verdict(self, symbol: str, date: str) -> Optional[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        row = cur.execute(
+            """
+            SELECT verdict, confidence, reasoning, key_risk, raw
+            FROM llm_verdicts
+            WHERE symbol = ? AND date = ?
+            """,
+            (symbol.upper(), date),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        return {
+            "verdict": d.get("verdict"),
+            "confidence": d.get("confidence") or 0,
+            "reasoning": d.get("reasoning") or "",
+            "key_risk": d.get("key_risk") or "",
+        }
 
     def close(self) -> None:
         self.conn.close()

@@ -54,6 +54,18 @@ class StockDetailActivity : AppCompatActivity() {
         val chart = findViewById<LineChart>(R.id.priceChart)
         val btnShare = findViewById<MaterialButton>(R.id.btnShare)
 
+        AskAiHelper.bind(
+            activity = this,
+            symbolProvider = { ticker },
+            btnAsk = findViewById(R.id.btnAskAi),
+            progress = findViewById(R.id.askAiProgress),
+            card = findViewById(R.id.askAiCard),
+            txtVerdict = findViewById(R.id.txtAiVerdict),
+            txtReasoning = findViewById(R.id.txtAiReasoning),
+            txtRisk = findViewById(R.id.txtAiRisk),
+            txtDisclaimer = findViewById(R.id.txtAiDisclaimer)
+        )
+
         btnShare.setOnClickListener {
             if (shareText.isBlank()) return@setOnClickListener
             val intent = Intent(Intent.ACTION_SEND).apply {

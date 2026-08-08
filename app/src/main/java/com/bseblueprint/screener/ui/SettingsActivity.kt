@@ -34,6 +34,7 @@ class SettingsActivity : AppCompatActivity() {
         val edtExclude = findViewById<TextInputEditText>(R.id.edtExcludeKeywords)
         val edtCandidate = findViewById<TextInputEditText>(R.id.edtCandidateKeywords)
         val edtBlueprint = findViewById<TextInputEditText>(R.id.edtBlueprintJson)
+        val edtHfToken = findViewById<TextInputEditText>(R.id.edtHfToken)
         val swWifi = findViewById<MaterialSwitch>(R.id.swRequireWifi)
         val swCharge = findViewById<MaterialSwitch>(R.id.swRequireCharging)
         val btnSave = findViewById<MaterialButton>(R.id.btnSave)
@@ -59,6 +60,7 @@ class SettingsActivity : AppCompatActivity() {
                 edtBlueprint.setText(
                     if (bp != null && !bp.isJsonNull) bp.toString() else "{}"
                 )
+                edtHfToken.setText(JsonSafe.string(settings, "hf_token").orEmpty())
                 swWifi.isChecked = jsonBool(settings, "require_wifi", true)
                 swCharge.isChecked = jsonBool(settings, "require_charging", false)
             } catch (t: Throwable) {
@@ -79,6 +81,7 @@ class SettingsActivity : AppCompatActivity() {
                             ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
                         "require_wifi" to swWifi.isChecked,
                         "require_charging" to swCharge.isChecked,
+                        "hf_token" to (edtHfToken.text?.toString()?.trim().orEmpty()),
                         "blueprint_tags" to com.google.gson.JsonParser
                             .parseString(edtBlueprint.text?.toString() ?: "{}")
                             .asJsonObject

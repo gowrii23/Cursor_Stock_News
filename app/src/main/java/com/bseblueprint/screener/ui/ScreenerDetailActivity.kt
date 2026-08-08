@@ -1,6 +1,7 @@
 package com.bseblueprint.screener.ui
 
 import android.os.Bundle
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -8,6 +9,7 @@ import com.bseblueprint.screener.R
 import com.bseblueprint.screener.bridge.PythonBridge
 import com.bseblueprint.screener.util.JsonSafe
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,18 @@ class ScreenerDetailActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         toolbar.setNavigationOnClickListener { finish() }
         supportActionBar?.title = symbol
+
+        AskAiHelper.bind(
+            activity = this,
+            symbolProvider = { symbol },
+            btnAsk = findViewById(R.id.btnAskAi),
+            progress = findViewById(R.id.askAiProgress),
+            card = findViewById(R.id.askAiCard),
+            txtVerdict = findViewById(R.id.txtAiVerdict),
+            txtReasoning = findViewById(R.id.txtAiReasoning),
+            txtRisk = findViewById(R.id.txtAiRisk),
+            txtDisclaimer = findViewById(R.id.txtAiDisclaimer)
+        )
 
         loadDetail()
     }
