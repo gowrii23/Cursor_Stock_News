@@ -8,7 +8,7 @@ object AskAiSourceFooter {
     fun format(sources: JsonObject?): String {
         if (sources == null) return ""
         val cached = JsonSafe.bool(sources, "cached") == true
-        if (cached) return "Cached today · tap Clear cache & re-ask to refresh"
+        if (cached) return "Cached today · tap Re-ask to refresh"
 
         val qual = JsonSafe.string(sources, "qual_status").orEmpty()
         val period = JsonSafe.string(sources, "concall_date").orEmpty()
