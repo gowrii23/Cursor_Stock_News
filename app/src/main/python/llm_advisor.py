@@ -14,10 +14,19 @@ from db import Database
 
 logger = logging.getLogger(__name__)
 
-# Prefer a publicly reachable Instruct model on HF Inference.
-HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
-# api-inference.huggingface.co was retired; router is the supported endpoint.
-HF_API = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+# Router chat API — auto-picks whichever inference provider hosts the model.
+HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+HF_API = "https://router.huggingface.co/v1/chat/completions"
+
+SYSTEM_PROMPT = """You are a value-investing analyst. Use ONLY the JSON stock data the user provides.
+Do not invent numbers, prices, or facts that are not in the data.
+Respond ONLY with a single JSON object (no markdown, no extra text) using this schema:
+{"verdict":"BUY_CANDIDATE|WATCH|AVOID","confidence":0-100,"reasoning":"2-3 sentences","key_risk":"1 sentence"}"""
+
+USER_PROMPT_TEMPLATE = """Stock data:
+{stock_json}
+
+Respond ONLY with the JSON verdict object."""
 
 
 def _friendly_api_error(exc_or_msg: Any, status_code: Optional[int] = None) -> str:
@@ -27,13 +36,19 @@ def _friendly_api_error(exc_or_msg: Any, status_code: Optional[int] = None) -> s
     if status_code == 401:
         return "Invalid Hugging Face token — check Settings."
     if status_code == 403:
-        return "Token cannot access this model — accept its license on huggingface.co."
+        return "Token cannot access Inference Providers — enable that scope on huggingface.co/settings/tokens."
     if status_code == 429:
         return "Hugging Face rate limit — wait a few minutes and retry."
     if status_code == 410:
         return "Hugging Face API endpoint retired — update the app."
     if status_code == 503:
         return "Model is loading on Hugging Face — retry in a minute."
+    if "not supported by provider" in lower or "model_not_supported" in lower:
+        return (
+            "This model is not on HF's own servers — update the app to use router auto-selection."
+        )
+    if "inference providers" in lower and ("permission" in lower or "scope" in lower):
+        return "HF token needs “Make calls to Inference Providers” — regenerate at huggingface.co/settings/tokens."
     if "failed to resolve" in lower or "name resolution" in lower or "could not resolve host" in lower:
         return "Cannot reach Hugging Face (network/DNS). Check internet connection."
     if "timed out" in lower or "timeout" in lower:
@@ -44,56 +59,62 @@ def _friendly_api_error(exc_or_msg: Any, status_code: Optional[int] = None) -> s
         return "Hugging Face request failed — check token and connection."
     return msg
 
-PROMPT_TEMPLATE = """You are a value-investing analyst. Use ONLY the JSON stock data below.
-Do not invent numbers, prices, or facts that are not in the data.
-Do not cite figures you were not given.
 
-Stock data:
-{stock_json}
-
-Respond ONLY with a single JSON object (no markdown, no extra text):
-{{"verdict":"BUY_CANDIDATE|WATCH|AVOID","confidence":0-100,"reasoning":"2-3 sentences","key_risk":"1 sentence"}}"""
+def _extract_error_message(body: Any, fallback: str = "") -> str:
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            return str(err.get("message") or err.get("error") or fallback)
+        if err:
+            return str(err)
+    return fallback
 
 
 def _parse_json_response(body: Any) -> Dict[str, Any]:
-    """Extract forced JSON verdict from HF text-generation payloads."""
+    """Extract forced JSON verdict from HF chat-completion payloads."""
     text = ""
-    if isinstance(body, list) and body:
-        text = str(body[0].get("generated_text") or body[0].get("summary_text") or "")
-    elif isinstance(body, dict):
-        text = str(body.get("generated_text") or body.get("error") or "")
-        if body.get("error") and not body.get("generated_text"):
+    if isinstance(body, dict):
+        if body.get("choices"):
+            choice = body["choices"][0] if body["choices"] else {}
+            message = choice.get("message") if isinstance(choice, dict) else {}
+            if isinstance(message, dict):
+                text = str(message.get("content") or "")
+        elif body.get("generated_text"):
+            text = str(body.get("generated_text"))
+        elif isinstance(body.get("error"), (str, dict)):
             return {
                 "verdict": "ERROR",
                 "confidence": 0,
-                "reasoning": str(body.get("error")),
+                "reasoning": _friendly_api_error(_extract_error_message(body)),
                 "key_risk": "API returned an error payload",
                 "cached": False,
             }
+    elif isinstance(body, list) and body:
+        text = str(body[0].get("generated_text") or body[0].get("summary_text") or "")
     else:
         text = str(body)
+
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    # Try whole string first (response_format json_object)
+    for candidate in (text,):
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, dict) and obj.get("verdict"):
+                return _normalize_verdict_obj(obj)
+        except Exception:
+            pass
 
     # Prefer last JSON object in the string (prompt may be echoed)
     matches = list(re.finditer(r"\{[^{}]*\}", text, re.S))
     for m in reversed(matches):
         try:
             obj = json.loads(m.group(0))
-            verdict = str(obj.get("verdict") or "ERROR").upper()
-            if verdict not in ("BUY_CANDIDATE", "WATCH", "AVOID", "ERROR"):
-                verdict = "WATCH"
-            conf = obj.get("confidence")
-            try:
-                conf_i = int(float(conf))
-            except Exception:
-                conf_i = 0
-            conf_i = max(0, min(100, conf_i))
-            return {
-                "verdict": verdict,
-                "confidence": conf_i,
-                "reasoning": str(obj.get("reasoning") or "").strip() or "No reasoning returned",
-                "key_risk": str(obj.get("key_risk") or "").strip() or "—",
-                "cached": False,
-            }
+            if isinstance(obj, dict) and obj.get("verdict"):
+                return _normalize_verdict_obj(obj)
         except Exception:
             continue
     return {
@@ -101,6 +122,24 @@ def _parse_json_response(body: Any) -> Dict[str, Any]:
         "confidence": 0,
         "reasoning": "Could not parse AI JSON response",
         "key_risk": "Parse failure — trust your raw L1/L2/L3 scores",
+        "cached": False,
+    }
+
+
+def _normalize_verdict_obj(obj: Dict[str, Any]) -> Dict[str, Any]:
+    verdict = str(obj.get("verdict") or "ERROR").upper()
+    if verdict not in ("BUY_CANDIDATE", "WATCH", "AVOID", "ERROR"):
+        verdict = "WATCH"
+    try:
+        conf_i = int(float(obj.get("confidence")))
+    except Exception:
+        conf_i = 0
+    conf_i = max(0, min(100, conf_i))
+    return {
+        "verdict": verdict,
+        "confidence": conf_i,
+        "reasoning": str(obj.get("reasoning") or "").strip() or "No reasoning returned",
+        "key_risk": str(obj.get("key_risk") or "").strip() or "—",
         "cached": False,
     }
 
@@ -125,7 +164,6 @@ def build_stock_payload(db: Database, symbol: str) -> Dict[str, Any]:
         payload["manual_notes"] = screener.get("manual_notes")
         raw = screener.get("raw_columns") or {}
         if isinstance(raw, dict):
-            # Keep a tiny subset of already-scraped ratios if present
             for label, key in (
                 ("P/E", "pe"),
                 ("ROCE %", "roce"),
@@ -214,21 +252,27 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
             "symbol": sym,
         }
 
-    prompt = PROMPT_TEMPLATE.format(stock_json=json.dumps(payload, default=str))
-    headers = {"Authorization": f"Bearer {str(token).strip()}"}
+    user_content = USER_PROMPT_TEMPLATE.format(stock_json=json.dumps(payload, default=str))
+    headers = {
+        "Authorization": f"Bearer {str(token).strip()}",
+        "Content-Type": "application/json",
+    }
     body = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 280,
-            "temperature": 0.2,
-            "return_full_text": False,
-        },
+        "model": HF_MODEL,
+        "provider": "auto",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+        "max_tokens": 280,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
     }
 
     last_err = "Request timed out — check connection and retry."
     for attempt in range(3):
         try:
-            resp = requests.post(HF_API, headers=headers, json=body, timeout=35)
+            resp = requests.post(HF_API, headers=headers, json=body, timeout=45)
             if resp.status_code == 200:
                 result = _parse_json_response(resp.json())
                 result["status"] = "ok" if result.get("verdict") != "ERROR" else "error"
@@ -241,10 +285,9 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
                 last_err = _friendly_api_error("", resp.status_code)
                 time.sleep(5 * (attempt + 1))
                 continue
-            # Auth / hard errors — don't retry forever
             try:
                 detail = resp.json()
-                msg = detail.get("error") if isinstance(detail, dict) else resp.text[:200]
+                msg = _extract_error_message(detail, resp.text[:200])
             except Exception:
                 msg = resp.text[:200]
             return {
@@ -252,7 +295,7 @@ def get_verdict(db: Database, symbol: str, force_refresh: bool = False) -> Dict[
                 "verdict": "ERROR",
                 "confidence": 0,
                 "reasoning": _friendly_api_error(msg, resp.status_code),
-                "key_risk": "Check HF token / model access",
+                "key_risk": "Check HF token has Inference Providers scope",
                 "cached": False,
                 "symbol": sym,
             }
@@ -287,7 +330,7 @@ def ask_ai_verdict_json(
                 "status": "error",
                 "verdict": "ERROR",
                 "confidence": 0,
-                "reasoning": str(e),
+                "reasoning": _friendly_api_error(e),
                 "key_risk": "Unexpected failure",
                 "cached": False,
                 "symbol": (symbol or "").upper(),
