@@ -11,6 +11,13 @@ from typing import Any, Dict, Optional
 import requests
 
 from db import Database
+from progress_report import report
+
+try:
+    from concall_fetcher import concall_payload_for_llm, get_or_fetch_concall
+except Exception:  # pragma: no cover - import guard for partial deploys
+    get_or_fetch_concall = None  # type: ignore
+    concall_payload_for_llm = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +26,9 @@ HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 HF_API = "https://router.huggingface.co/v1/chat/completions"
 
 SYSTEM_PROMPT = """You are a value-investing analyst. Use ONLY the JSON stock data the user provides.
+Quantitative screener scores and optional concall/transcript qualitative context may be included.
 Do not invent numbers, prices, or facts that are not in the data.
+If concall data is missing, base your verdict on quantitative fields only.
 Respond ONLY with a single JSON object (no markdown, no extra text) using this schema:
 {"verdict":"BUY_CANDIDATE|WATCH|AVOID","confidence":0-100,"reasoning":"2-3 sentences","key_risk":"1 sentence"}"""
 
@@ -221,6 +230,7 @@ def get_verdict(
     hf_token: str = "",
     gemini_key: str = "",
     force_refresh: bool = False,
+    progress_cb: Any = None,
 ) -> Dict[str, Any]:
     """Cached daily HF verdict for a symbol. Manual trigger only."""
     sym = symbol.strip().upper()
@@ -258,9 +268,24 @@ def get_verdict(
             "symbol": sym,
         }
 
-    # gemini_key reserved for future qualitative concall extraction (optional step).
-    _ = gemini_key
+    concall_block: Dict[str, Any] = {}
+    if get_or_fetch_concall and concall_payload_for_llm:
+        try:
+            concall_record = get_or_fetch_concall(
+                db,
+                sym,
+                gemini_key=gemini_key,
+                force_refresh=force_refresh,
+                progress_cb=progress_cb,
+            )
+            concall_block = concall_payload_for_llm(concall_record)
+            if concall_block:
+                payload["concall"] = concall_block
+        except Exception:
+            logger.debug("concall fetch skipped for %s", sym, exc_info=True)
+            report(progress_cb, 35, "Concall fetch skipped — quant-only verdict")
 
+    report(progress_cb, 45, "Asking Hugging Face…")
     user_content = USER_PROMPT_TEMPLATE.format(stock_json=json.dumps(payload, default=str))
     headers = {
         "Authorization": f"Bearer {token}",
@@ -330,6 +355,7 @@ def ask_ai_verdict_json(
     gemini_key: str = "",
     db_path: Optional[str] = None,
     force_refresh: bool = False,
+    progress_cb: Any = None,
 ) -> str:
     db = Database(db_path)
     try:
@@ -340,6 +366,7 @@ def ask_ai_verdict_json(
                 hf_token=hf_token,
                 gemini_key=gemini_key,
                 force_refresh=force_refresh,
+                progress_cb=progress_cb,
             ),
             default=str,
         )

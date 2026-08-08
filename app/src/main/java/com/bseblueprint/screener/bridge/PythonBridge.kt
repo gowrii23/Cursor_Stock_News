@@ -219,7 +219,11 @@ object PythonBridge {
         return JsonParser.parseString(raw).asJsonObject
     }
 
-    fun askAiVerdict(symbol: String, forceRefresh: Boolean = false): JsonObject {
+    fun askAiVerdict(
+        symbol: String,
+        forceRefresh: Boolean = false,
+        reporter: RunProgressReporter? = null
+    ): JsonObject {
         val ctx = requireContext()
         val raw = Python.getInstance().getModule("llm_advisor")
             .callAttr(
@@ -228,7 +232,8 @@ object PythonBridge {
                 SecureTokenStore.getHfToken(ctx),
                 SecureTokenStore.getGeminiKey(ctx),
                 dbPath,
-                forceRefresh
+                forceRefresh,
+                reporter
             )
             .toString()
         return JsonParser.parseString(raw).asJsonObject

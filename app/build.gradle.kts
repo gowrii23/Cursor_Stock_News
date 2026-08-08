@@ -12,8 +12,8 @@ android {
         applicationId = "com.bseblueprint.screener"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.7.3"
+        versionCode = 24
+        versionName = "1.7.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -72,6 +72,7 @@ chaquopy {
             install("feedparser")
             install("requests")
             install("certifi")
+            install("pypdf")
         }
     }
 }

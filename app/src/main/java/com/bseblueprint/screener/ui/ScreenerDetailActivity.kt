@@ -36,6 +36,7 @@ class ScreenerDetailActivity : AppCompatActivity() {
             symbolProvider = { symbol },
             btnAsk = findViewById(R.id.btnAskAi),
             progress = findViewById(R.id.askAiProgress),
+            txtStatus = findViewById(R.id.txtAskAiStatus),
             card = findViewById(R.id.askAiCard),
             txtVerdict = findViewById(R.id.txtAiVerdict),
             txtReasoning = findViewById(R.id.txtAiReasoning),
